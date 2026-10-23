@@ -4,7 +4,7 @@ A responsive programming learning platform built with React 19, TypeScript, Vite
 
 ## Run locally
 
-Requires Node.js 20.19+ or 22.12+ (validated with Node 24).
+Requires Node.js 22.12+ (validated with Node 22 and 24). A `.nvmrc` file selects Node 22 for nvm users.
 
 ```sh
 npm ci
@@ -39,3 +39,17 @@ All course illustrations are local SVG/CSS artwork. External fonts have system f
 Deploy the generated `dist` directory to a static host and configure all application paths to fall back to `index.html` so direct links and browser refreshes work. Vite development and preview servers include this fallback.
 
 Browser-based visual checks could not run in the setup environment because the Chromium download domain was blocked. DOM integration tests and the production build passed.
+
+## Native dependency troubleshooting on Linux
+
+If Tailwind reports “Cannot find native binding”, first use a supported Node version and install optional dependencies. The lockfile already includes Linux platform bindings; keep it. `npm ci` replaces the generated dependency directory automatically.
+
+With nvm: `nvm install && nvm use`, followed by `npm ci --include=dev --include=optional`.
+
+Without changing your global Node installation, use:
+
+```sh
+npx --yes --package=node@22 --package=npm@10 -c 'node --version && npm ci --include=dev --include=optional && npm run dev'
+```
+
+This downloads Node 22 and npm 10 into npm's tool cache, installs dependencies under that runtime, and starts Vite. Subsequent development sessions should use this command or an activated Node 22 environment.
