@@ -3218,6 +3218,22 @@ footer {
     display: none;
   }
 }
+@media (max-width: 360px) {
+  .nav-wrap {
+    padding-inline: 14px;
+    gap: 10px;
+  }
+  .nav-actions {
+    gap: 6px;
+  }
+  .nav-actions > .button {
+    padding-inline: 9px;
+    gap: 6px;
+  }
+  .mobile-toggle {
+    padding: 5px;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
