@@ -47,7 +47,10 @@ import {
   ShieldCheck,
   Quote,
 } from "lucide-react";
-import { courses, sections, lessons, type Course } from "./data";
+import { sections, lessons, type Course } from "./data";
+import { CourseProvider, usePublishedCourses } from "./courses/CourseStore";
+import { AdminCourses } from "./admin/AdminCourses";
+import { CourseEditor } from "./admin/CourseEditor";
 import "./styles.css";
 type State = {
   saved: string[];
@@ -83,6 +86,13 @@ const Context = createContext<{
 }>({ state: initial, set: () => {}, toast: () => {} });
 const useApp = () => useContext(Context);
 export function App() {
+  return (
+    <CourseProvider>
+      <AppContent />
+    </CourseProvider>
+  );
+}
+function AppContent() {
   const [state, set] = useState(readState);
   const [message, toast] = useState("");
   const location = useLocation();
@@ -112,6 +122,27 @@ export function App() {
           <Route path="/signin" element={<Auth key="signin" />} />
           <Route path="/signup" element={<Auth key="signup" signup />} />
           <Route
+            path="/admin"
+            element={
+              <AdminCourses
+                onDeleteCourse={(id) => {
+                  set((s) => {
+                    const progress = { ...s.progress };
+                    delete progress[id];
+                    return {
+                      ...s,
+                      saved: s.saved.filter((x) => x !== id),
+                      enrolled: s.enrolled.filter((x) => x !== id),
+                      progress,
+                    };
+                  });
+                }}
+              />
+            }
+          />
+          <Route path="/admin/courses/new" element={<CourseEditor />} />
+          <Route path="/admin/courses/:id/edit" element={<CourseEditor />} />
+          <Route
             path="*"
             element={
               <div className="container empty">
@@ -125,7 +156,8 @@ export function App() {
           />
         </Routes>
       </main>
-      {!location.pathname.startsWith("/learn") && <Footer />}
+      {!location.pathname.startsWith("/learn") &&
+        !location.pathname.startsWith("/admin") && <Footer />}
       {message && (
         <div role="status" className="toast">
           <CheckCircle2 size={19} />
@@ -160,6 +192,7 @@ function Header() {
         <nav className="desktop-nav">
           <NavLink to="/courses">Explore Courses</NavLink>
           <NavLink to="/dashboard">My Learning</NavLink>
+          <NavLink to="/admin">Admin</NavLink>
         </nav>
         <form
           className="nav-search"
@@ -224,6 +257,7 @@ function Header() {
         <nav className="mobile-nav">
           <Link to="/courses">Explore Courses</Link>
           <Link to="/dashboard">My Learning</Link>
+          <Link to="/admin">Admin workspace</Link>
           <Link to="/signin">Demo sign in</Link>
           <form
             onSubmit={(e) => {
@@ -402,6 +436,7 @@ function CourseCard({ course: c }: { course: Course }) {
   );
 }
 function Home() {
+  const courses = usePublishedCourses();
   return (
     <>
       <section className="hero container">
@@ -525,7 +560,10 @@ function Home() {
                 <c.icon size={23} />
               </span>
               <h3>{c.name}</h3>
-              <p>{c.count} thoughtfully crafted courses</p>
+              <p>
+                {courses.filter((course) => course.category === c.name).length}{" "}
+                thoughtfully crafted courses
+              </p>
               <ArrowUpRight size={17} />
             </Link>
           ))}
@@ -640,6 +678,9 @@ function Home() {
   );
 }
 function DashboardPreview() {
+  const courses = usePublishedCourses();
+  const previewCourse =
+    courses.find((course) => course.id === "react") ?? courses[0];
   return (
     <div className="preview-scene">
       <div className="floating-label float-top">
@@ -690,9 +731,13 @@ function DashboardPreview() {
           <div className="preview-course">
             <div className="mini-react">⚛</div>
             <div>
-              <span>WEB DEVELOPMENT</span>
-              <h4>React: From Zero to Production</h4>
-              <p>Next up: Understanding React Hooks</p>
+              <span>{previewCourse?.category ?? "YOUR NEXT CHAPTER"}</span>
+              <h4>{previewCourse?.title ?? "Discover your next course"}</h4>
+              <p>
+                {previewCourse?.id === "react"
+                  ? "Next up: Understanding React Hooks"
+                  : "A little progress, one lesson at a time."}
+              </p>
             </div>
           </div>
           <div className="preview-progress">
@@ -703,7 +748,10 @@ function DashboardPreview() {
               <i />
             </div>
           </div>
-          <Link className="preview-continue" to="/courses/react">
+          <Link
+            className="preview-continue"
+            to={previewCourse ? `/courses/${previewCourse.id}` : "/courses"}
+          >
             Continue learning <ArrowRight size={14} />
           </Link>
           <div className="preview-footer">
@@ -725,6 +773,7 @@ function DashboardPreview() {
   );
 }
 function Catalog() {
+  const courses = usePublishedCourses();
   const location = useLocation();
   const params = new URLSearchParams(location.search);
   const [q, setQ] = useState(params.get("q") || "");
@@ -885,6 +934,7 @@ function Enroll({ course: c }: { course: Course }) {
   );
 }
 function Details() {
+  const courses = usePublishedCourses();
   const { id } = useParams();
   const c = courses.find((c) => c.id === id);
   const { state } = useApp();
@@ -1131,6 +1181,7 @@ function Curriculum({
   );
 }
 function Dashboard() {
+  const courses = usePublishedCourses();
   const { state, set, toast } = useApp();
   const [navOpen, setNavOpen] = useState(false);
   const [tab, setTab] = useState("overview");
@@ -1349,6 +1400,7 @@ function Dashboard() {
   );
 }
 function Workspace() {
+  const courses = usePublishedCourses();
   const { id, lesson } = useParams();
   const { state, set, toast } = useApp();
   const [sidebar, setSidebar] = useState(true);
