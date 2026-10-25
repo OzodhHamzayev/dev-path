@@ -1185,7 +1185,7 @@ function Dashboard() {
                 toast("Signed out of your demo session");
               }}
             >
-              <LogOut size={17} /> Sign out of demo
+              <LogOut size={17} /> Log out
             </button>
           )}
         </div>
@@ -1550,24 +1550,78 @@ function Auth({ signup = false }: { signup?: boolean }) {
   const [visible, setVisible] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const { set, toast } = useApp();
-  const nav = useNavigate();
-  function submit(e: React.FormEvent) {
-    e.preventDefault();
-    const next: Record<string, string> = {};
-    if (signup && name.trim().length < 2)
-      next.name = "Please enter at least two characters.";
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
-      next.email = "Enter a valid email address.";
-    if (password.length < 8)
-      next.password = "Use at least 8 characters for this demo.";
-    setErrors(next);
-    if (!Object.keys(next).length) {
-      set((s) => ({ ...s, user: signup ? name.trim() : email.split("@")[0] }));
-      setPassword("");
-      toast("Demo session started. No real account was created.");
-      nav("/dashboard");
-    }
+  const nav = useNavigate();<form onSubmit={submit} noValidate></form>
+  async function submit(e: React.FormEvent) {
+  e.preventDefault();
+
+  const next: Record<string, string> = {};
+
+  if (signup && name.trim().length < 2) {
+    next.name = "enter your name.";
   }
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    next.email = "enter your email.";
+  }
+
+  if (password.length < 8) {
+    next.password = "password should be at least 8 characters.";
+  }
+
+  setErrors(next);
+  if (Object.keys(next).length > 0) return;
+
+if (!signup) {
+  try {
+    const response = await fetch(
+      "http://localhost:8080/api/auth/login",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      }
+    );
+
+    if (!response.ok) {
+      setErrors({ submit: "Login amalga oshmadi." });
+      return;
+    }
+
+  set((s) => ({ ...s, user: email.split("@")[0] }));
+  setPassword("");
+  nav("/dashboard");
+  } catch {
+    setErrors({ submit: "Backendga ulanib bo‘lmadi." });
+  }
+
+  return;
+}
+  try {
+    const response = await fetch(
+      "http://localhost:8080/api/auth/register",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name.trim(),
+          email,
+          password,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      setErrors({ submit: "an error occured while registering" });
+      return;
+    }
+
+    setPassword("");
+    toast("You have successfully registered. Please log in now.");
+    nav("/signin");
+  } catch {
+    setErrors({ submit: "could not connect to the backend" });
+  }
+}
   return (
     <section className="auth-page container" key={signup ? "signup" : "signin"}>
       <div className="auth-story">
@@ -1603,14 +1657,12 @@ function Auth({ signup = false }: { signup?: boolean }) {
             ? "Try your own learning space."
             : "Pick up where your curiosity left off."}
         </p>
-        <div className="demo-banner">
-          <ShieldCheck size={20} />
-          <span>
-            This is demo authentication. No real account is created. Your
-            password is never stored or sent.
-          </span>
-        </div>
         <form onSubmit={submit} noValidate>
+        {errors.submit && (
+          <p className="form-error" role="alert">
+            {errors.submit}
+          </p>
+)}
           {signup && (
             <label>
               Your name
@@ -1673,14 +1725,14 @@ function Auth({ signup = false }: { signup?: boolean }) {
             )}
           </label>
           <button className="button primary full" type="submit">
-            {signup ? "Start demo learning" : "Sign in to demo"}{" "}
+            {signup ? "Sign in" : "Log in"}{" "}
             <ArrowRight size={17} />
           </button>
         </form>
         <p className="auth-switch">
           {signup ? "Already exploring?" : "New around here?"}{" "}
           <Link to={signup ? "/signin" : "/signup"}>
-            {signup ? "Demo sign in" : "Get started"}
+            {signup ? "Log in" : "Sign in"}
           </Link>
         </p>
         <p className="demo-note">
