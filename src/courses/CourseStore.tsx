@@ -7,7 +7,10 @@ import {
 } from "react";
 import { courses as initialCourses, type Course } from "../data";
 
-export type ManagedCourse = Course & { status: "published" | "draft" };
+export type ManagedCourse = Course & {
+  status: "published" | "draft";
+  backendId?: string;
+};
 export const COURSE_STORAGE_KEY = "devpath-courses-v1";
 export const categories = [
   "Web Development",
@@ -61,6 +64,7 @@ type CourseStore = {
   courses: ManagedCourse[];
   storageError: string;
   saveCourse: (course: ManagedCourse) => boolean;
+  cacheCreatedCourse: (course: ManagedCourse) => void;
   deleteCourse: (id: string) => boolean;
 };
 const Context = createContext<CourseStore | null>(null);
@@ -111,12 +115,27 @@ export function CourseProvider({ children }: { children: ReactNode }) {
     );
   }
 
+  function cacheCreatedCourse(course: ManagedCourse) {
+    const next = [course, ...courses.filter((c) => c.id !== course.id)];
+    // A successful POST must not be repeated if the optional browser cache fails.
+    try {
+      localStorage.setItem(COURSE_STORAGE_KEY, JSON.stringify(next));
+      setStorageError("");
+    } catch {
+      setStorageError(
+        "The course was created on the backend, but its browser copy could not be saved. Do not submit it again; check browser storage.",
+      );
+    }
+    setCourses(next);
+  }
+
   return (
     <Context.Provider
       value={{
         courses,
         storageError,
         saveCourse,
+        cacheCreatedCourse,
         deleteCourse: (id) => persist(courses.filter((c) => c.id !== id)),
       }}
     >

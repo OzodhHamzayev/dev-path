@@ -89,6 +89,14 @@ export function AdminCourses({
           Create course
         </Link>
       </div>
+      <div className="admin-preview-notice">
+        <ShieldNote />
+        <p>
+          <strong>Course creation is connected to the backend.</strong> This
+          list is a browser copy. Editing, publishing, and deleting are still
+          browser-only.
+        </p>
+      </div>
       <div className="admin-stats">
         {[
           {
