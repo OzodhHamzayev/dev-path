@@ -41,8 +41,11 @@ export function AdminCourses({
     if (typeof createdTitle === "string")
       return `“${createdTitle}” was created successfully.`;
     const updatedTitle = location.state?.updatedTitle;
-    return typeof updatedTitle === "string"
-      ? `“${updatedTitle}” was updated successfully.`
+    if (typeof updatedTitle === "string")
+      return `“${updatedTitle}” was updated successfully.`;
+    const localUpdatedTitle = location.state?.localUpdatedTitle;
+    return typeof localUpdatedTitle === "string"
+      ? `“${localUpdatedTitle}” was updated in this browser demo.`
       : "";
   });
   const [deleteError, setDeleteError] = useState("");

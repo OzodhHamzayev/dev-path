@@ -218,11 +218,15 @@ function EditorForm({ course }: { course?: ManagedCourse }) {
     submitting.current = true;
     setIsSaving(true);
     try {
-      await updateCourseInApi(course.backendId ?? course.id, updated);
+      const databaseId =
+        course.backendId ?? (/^\d+$/.test(course.id) ? course.id : null);
+      if (databaseId) await updateCourseInApi(databaseId, updated);
       if (saveCourse(updated)) {
         nav("/admin", {
           replace: true,
-          state: { updatedTitle: updated.title },
+          state: databaseId
+            ? { updatedTitle: updated.title }
+            : { localUpdatedTitle: updated.title },
         });
       }
     } catch (error) {
@@ -275,7 +279,9 @@ function EditorForm({ course }: { course?: ManagedCourse }) {
         <span className="admin-preview-dot" />
         <p>
           {course
-            ? "Saving changes updates this course through the backend. Cover, subject, and visibility remain in the browser copy until the backend supports them."
+            ? course.backendId || /^\d+$/.test(course.id)
+              ? "Saving changes updates this course through the backend. Cover, subject, and visibility remain in the browser copy until the backend supports them."
+              : "This starter course exists only in the browser, so changes stay in this demo workspace. Database courses are updated through the backend."
             : "Create course sends your details to the backend. Cover, subject, and draft/published visibility are kept in this browser until the backend supports them."}
         </p>
       </div>

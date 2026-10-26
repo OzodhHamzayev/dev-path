@@ -226,12 +226,11 @@ test("editing preserves course identity and updates its public detail page", asy
   await user.type(screen.getByLabelText("Price (USD)"), "64.50");
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   expect(
-    await screen.findByText("“React in Practice” was updated successfully."),
+    await screen.findByText(
+      "“React in Practice” was updated in this browser demo.",
+    ),
   ).toBeTruthy();
-  expect(fetch).toHaveBeenCalledWith(
-    "http://localhost:8080/api/admin/courses/react",
-    expect.objectContaining({ method: "PUT" }),
-  );
+  expect(fetch).not.toHaveBeenCalled();
   const updated = JSON.parse(localStorage.getItem(COURSE_STORAGE_KEY)!).find(
     (c: { id: string }) => c.id === "react",
   );
@@ -246,6 +245,29 @@ test("editing preserves course identity and updates its public detail page", asy
   expect(
     screen.getByRole("heading", { name: "React in Practice", level: 1 }),
   ).toBeTruthy();
+});
+
+test("editing sends a numeric backend ID for a database course", async () => {
+  const user = userEvent.setup();
+  localStorage.setItem(
+    COURSE_STORAGE_KEY,
+    JSON.stringify([
+      { ...courses[0], id: "17", backendId: "17", status: "published" },
+    ]),
+  );
+  open("/admin/courses/17/edit");
+
+  await user.clear(screen.getByLabelText("Course title"));
+  await user.type(screen.getByLabelText("Course title"), "React from DB");
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+  expect(
+    await screen.findByText("“React from DB” was updated successfully."),
+  ).toBeTruthy();
+  expect(fetch).toHaveBeenCalledWith(
+    "http://localhost:8080/api/admin/courses/17",
+    expect.objectContaining({ method: "PUT" }),
+  );
 });
 
 test("draft courses stay out of the public catalog until published", async () => {
