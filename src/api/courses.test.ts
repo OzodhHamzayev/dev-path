@@ -147,6 +147,17 @@ test("updates a course through PUT with the Go DTO and Bearer token", async () =
   });
 });
 
+test("identifies a missing update route instead of calling it a create error", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(new Response(null, { status: 404 })),
+  );
+
+  await expect(updateCourseInApi("42", candidate)).rejects.toThrow(
+    "The course update route or course ID was not found",
+  );
+});
+
 test("deletes a course by backend ID with the existing Bearer token", async () => {
   sessionStorage.setItem("token", "test-access-token");
   const fetchMock = vi
