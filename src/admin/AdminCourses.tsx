@@ -77,15 +77,13 @@ export function AdminCourses({
     setIsDeleting(true);
     setDeleteError("");
     try {
-      // Seeded demo courses only exist in this browser. Courses returned by
-      // the backend carry backendId and are deleted from the API first.
-      if (deleting.backendId)
-        await deleteCourseFromApi(deleting.backendId);
+      // Prefer the database ID returned by the API. Older cached courses may
+      // only have `id`, so send that value instead of silently skipping the
+      // backend request.
+      await deleteCourseFromApi(deleting.backendId ?? deleting.id);
       if (!deleteCourse(deleting.id)) {
         setDeleteError(
-          deleting.backendId
-            ? "The backend deleted the course, but the browser copy could not be updated. Reload the page to refresh it."
-            : "The course could not be deleted. Check browser storage and try again.",
+          "The backend deleted the course, but the browser copy could not be updated. Reload the page to refresh it.",
         );
         return;
       }

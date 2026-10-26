@@ -298,6 +298,10 @@ test("deletion requires confirmation and removes saved, enrolled and progress re
       name: "Delete course",
     }),
   );
+  expect(fetch).toHaveBeenCalledWith(
+    "http://localhost:8080/api/admin/courses/react",
+    expect.objectContaining({ method: "DELETE" }),
+  );
   expect(screen.queryByRole("link", { name: courses[0].title })).toBeNull();
   expect(JSON.parse(localStorage.getItem("devpath")!)).toMatchObject({
     saved: [],
