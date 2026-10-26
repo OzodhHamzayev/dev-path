@@ -302,10 +302,7 @@ test("deletion requires confirmation and removes saved, enrolled and progress re
       name: "Delete course",
     }),
   );
-  expect(fetch).toHaveBeenCalledWith(
-    "http://localhost:8080/api/admin/courses/react",
-    expect.objectContaining({ method: "DELETE" }),
-  );
+  expect(fetch).not.toHaveBeenCalled();
   expect(screen.queryByRole("link", { name: courses[0].title })).toBeNull();
   expect(JSON.parse(localStorage.getItem("devpath")!)).toMatchObject({
     saved: [],
@@ -317,6 +314,31 @@ test("deletion requires confirmation and removes saved, enrolled and progress re
   expect(
     screen.getByRole("heading", { name: "This path hasn’t been built yet." }),
   ).toBeTruthy();
+});
+
+test("deletion sends a numeric backend ID for a database course", async () => {
+  const user = userEvent.setup();
+  localStorage.setItem(
+    COURSE_STORAGE_KEY,
+    JSON.stringify([
+      { ...courses[0], id: "17", backendId: "17", status: "published" },
+    ]),
+  );
+  open();
+
+  await user.click(
+    screen.getByRole("button", { name: `Delete ${courses[0].title}` }),
+  );
+  await user.click(
+    within(screen.getByRole("dialog")).getByRole("button", {
+      name: "Delete course",
+    }),
+  );
+
+  expect(fetch).toHaveBeenCalledWith(
+    "http://localhost:8080/api/admin/courses/17",
+    expect.objectContaining({ method: "DELETE" }),
+  );
 });
 
 test("admin search, status filters, reset and pagination are functional", async () => {

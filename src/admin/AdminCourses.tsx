@@ -80,10 +80,17 @@ export function AdminCourses({
     setIsDeleting(true);
     setDeleteError("");
     try {
-      await deleteCourseFromApi(deleting.backendId ?? deleting.id);
+      const databaseId =
+        deleting.backendId ?? (/^\d+$/.test(deleting.id) ? deleting.id : null);
+      // The starter courses from data.ts use IDs such as "react" and do not
+      // exist in PostgreSQL. Only courses with a numeric database ID should
+      // call the backend delete route.
+      if (databaseId) await deleteCourseFromApi(databaseId);
       if (!deleteCourse(deleting.id)) {
         setDeleteError(
-          "The backend deleted the course, but the browser copy could not be updated. Reload the page to refresh it.",
+          databaseId
+            ? "The backend deleted the course, but the browser copy could not be updated. Reload the page to refresh it."
+            : "The demo course could not be removed from browser storage. Check browser storage and try again.",
         );
         return;
       }
