@@ -5,13 +5,14 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { courses as initialCourses, type Course } from "../data";
+import { getCoursesFromApi } from "../api/courses";
+import type { Course } from "../data";
 
 export type ManagedCourse = Course & {
   status: "published" | "draft";
   backendId?: string;
 };
-export const COURSE_STORAGE_KEY = "devpath-courses-v1";
+export const COURSE_STORAGE_KEY = "devpath-courses-v2";
 export const categories = [
   "Web Development",
   "Programming",
@@ -56,13 +57,12 @@ function parseCourses(raw: string | null): ManagedCourse[] | null {
   }
 }
 
-function seed(): ManagedCourse[] {
-  return initialCourses.map((c) => ({ ...c, status: "published" }));
-}
-
 type CourseStore = {
   courses: ManagedCourse[];
   storageError: string;
+  loadError: string;
+  isLoading: boolean;
+  refreshCourses: () => Promise<void>;
   saveCourse: (course: ManagedCourse) => boolean;
   cacheCreatedCourse: (course: ManagedCourse) => void;
   deleteCourse: (id: string) => boolean;
@@ -72,26 +72,63 @@ const Context = createContext<CourseStore | null>(null);
 export function CourseProvider({ children }: { children: ReactNode }) {
   const [courses, setCourses] = useState<ManagedCourse[]>(() => {
     try {
-      return parseCourses(localStorage.getItem(COURSE_STORAGE_KEY)) ?? seed();
+      return parseCourses(localStorage.getItem(COURSE_STORAGE_KEY)) ?? [];
     } catch {
-      return seed();
+      return [];
     }
   });
   const [storageError, setStorageError] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    async function load() {
+      setIsLoading(true);
+      try {
+        const backendCourses = await getCoursesFromApi();
+        if (!active) return;
+        setCourses(backendCourses);
+        setLoadError("");
+        try {
+          localStorage.setItem(
+            COURSE_STORAGE_KEY,
+            JSON.stringify(backendCourses),
+          );
+          setStorageError("");
+        } catch {
+          setStorageError(
+            "Courses loaded, but the browser cache could not be updated.",
+          );
+        }
+      } catch (error) {
+        if (active)
+          setLoadError(
+            error instanceof Error
+              ? error.message
+              : "Courses could not be loaded.",
+          );
+      } finally {
+        if (active) setIsLoading(false);
+      }
+    }
+    void load();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     function sync(event: StorageEvent) {
       if (event.key !== COURSE_STORAGE_KEY && event.key !== null) return;
       const parsed = parseCourses(event.newValue);
       if (parsed) setCourses(parsed);
-      else if (event.newValue === null) setCourses(seed());
+      else if (event.newValue === null) setCourses([]);
     }
     window.addEventListener("storage", sync);
     return () => window.removeEventListener("storage", sync);
   }, []);
 
-  // The persistence boundary for the frontend demo. Replace these operations
-  // with authenticated requests when the Go course API contract is available.
   function persist(next: ManagedCourse[]) {
     try {
       localStorage.setItem(COURSE_STORAGE_KEY, JSON.stringify(next));
@@ -129,11 +166,29 @@ export function CourseProvider({ children }: { children: ReactNode }) {
     setCourses(next);
   }
 
+  async function refreshCourses() {
+    setIsLoading(true);
+    try {
+      const backendCourses = await getCoursesFromApi();
+      persist(backendCourses);
+      setLoadError("");
+    } catch (error) {
+      setLoadError(
+        error instanceof Error ? error.message : "Courses could not be loaded.",
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   return (
     <Context.Provider
       value={{
         courses,
         storageError,
+        loadError,
+        isLoading,
+        refreshCourses,
         saveCourse,
         cacheCreatedCourse,
         deleteCourse: (id) => persist(courses.filter((c) => c.id !== id)),

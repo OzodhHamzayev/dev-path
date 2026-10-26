@@ -6,6 +6,7 @@ import {
   courseDeletionUrl,
   courseUpdateUrl,
   deleteCourseFromApi,
+  getCoursesFromApi,
   updateCourseInApi,
 } from "./courses";
 import { courses } from "../data";
@@ -30,6 +31,67 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
+});
+
+test("loads and maps database courses from the GET endpoint", async () => {
+  sessionStorage.setItem("token", "get-token");
+  const fetchMock = vi.fn().mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        courses: [
+          {
+            id: 17,
+            title: "Go Backend",
+            description: "Build APIs with Go and PostgreSQL.",
+            category: "Programming",
+            level: "Beginner",
+            price: 49.5,
+            rating: 4.8,
+            duration: 20,
+            instructor: "Ozod Hamzayev",
+          },
+        ],
+      }),
+      { status: 200 },
+    ),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+
+  const result = await getCoursesFromApi();
+
+  expect(result).toHaveLength(1);
+  expect(result[0]).toMatchObject({
+    id: "17",
+    backendId: "17",
+    title: "Go Backend",
+    price: 49.5,
+    rating: 4.8,
+    hours: 20,
+    initials: "OH",
+  });
+  expect(fetchMock).toHaveBeenCalledWith(
+    "http://localhost:8080/api/admin/courses",
+    expect.objectContaining({ method: "GET" }),
+  );
+  expect(fetchMock.mock.calls[0][1].headers.get("Authorization")).toBe(
+    "Bearer get-token",
+  );
+});
+
+test("rejects GET courses without numeric database IDs", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ courses: [{ id: "react", title: "Demo" }] }),
+        { status: 200 },
+      ),
+    ),
+  );
+
+  await expect(getCoursesFromApi()).rejects.toThrow(
+    "missing a numeric database ID",
+  );
 });
 
 test("posts the Go DTO, sends an existing Bearer token and retains the server-assigned ID", async () => {

@@ -28,7 +28,15 @@ export function AdminCourses({
 }: {
   onDeleteCourse: (id: string) => void;
 }) {
-  const { courses, saveCourse, deleteCourse, storageError } = useCourseStore();
+  const {
+    courses,
+    saveCourse,
+    deleteCourse,
+    storageError,
+    loadError,
+    isLoading,
+    refreshCourses,
+  } = useCourseStore();
   const location = useLocation();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
@@ -123,14 +131,6 @@ export function AdminCourses({
           Create course
         </Link>
       </div>
-      <div className="admin-preview-notice">
-        <ShieldNote />
-        <p>
-          <strong>Course creation and deletion are connected to the backend.</strong>{" "}
-          Updating is connected too. This list is a browser copy, and
-          publishing is still browser-only.
-        </p>
-      </div>
       <div className="admin-stats">
         {[
           {
@@ -191,6 +191,14 @@ export function AdminCourses({
         <p role="alert" className="admin-error">
           {storageError}
         </p>
+      )}
+      {loadError && !deleting && (
+        <div role="alert" className="admin-error">
+          {loadError}{" "}
+          <button type="button" onClick={() => void refreshCourses()}>
+            Try again
+          </button>
+        </div>
       )}
       <section className="admin-library" aria-labelledby="library-title">
         <div className="admin-library-heading">
@@ -282,7 +290,15 @@ export function AdminCourses({
             </button>
           </div>
         )}
-        {rows.length ? (
+        {isLoading ? (
+          <div className="admin-empty" aria-live="polite">
+            <span>
+              <BookOpen size={28} />
+            </span>
+            <h3>Loading courses…</h3>
+            <p>Getting the latest course list from the backend.</p>
+          </div>
+        ) : rows.length ? (
           <>
             <div className="admin-table-scroll">
               <table className="admin-table">
@@ -493,8 +509,4 @@ export function AdminCourses({
       )}
     </AdminLayout>
   );
-}
-
-function ShieldNote() {
-  return <span className="admin-preview-dot" aria-hidden="true" />;
 }

@@ -117,6 +117,107 @@ function authHeaders(config: ReturnType<typeof getConfig>, json = false) {
   return headers;
 }
 
+function textField(data: JsonObject, lower: string, upper: string) {
+  const value = data[lower] ?? data[upper];
+  return typeof value === "string" ? value : "";
+}
+
+function numberField(data: JsonObject, lower: string, upper: string) {
+  const value = data[lower] ?? data[upper];
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function mapApiCourse(value: unknown, index: number): ManagedCourse {
+  const data = object(value);
+  if (!data) throw new Error("The backend returned an invalid course item.");
+  const rawId = data.id ?? data.ID;
+  const id =
+    typeof rawId === "number" || typeof rawId === "string"
+      ? String(rawId)
+      : "";
+  if (!/^\d+$/.test(id) || Number(id) < 1)
+    throw new Error("A backend course is missing a numeric database ID.");
+
+  const instructor = textField(data, "instructor", "Instructor");
+  const statusValue = textField(data, "status", "Status");
+  const colors = ["blue", "sage", "purple", "gold", "coral"];
+  return {
+    id,
+    backendId: id,
+    title: textField(data, "title", "Title"),
+    description: textField(data, "description", "Description"),
+    category: textField(data, "category", "Category") || "Programming",
+    level: textField(data, "level", "Level") || "Beginner",
+    price: numberField(data, "price", "Price"),
+    rating: numberField(data, "rating", "Rating"),
+    hours: numberField(data, "duration", "Duration"),
+    instructor,
+    initials:
+      instructor
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((part) => part[0])
+        .slice(0, 2)
+        .join("")
+        .toUpperCase() || "DP",
+    color: colors[index % colors.length],
+    tech:
+      textField(data, "tech", "Tech") ||
+      textField(data, "category", "Category") ||
+      "Course",
+    status: statusValue === "draft" ? "draft" : "published",
+    students: numberField(data, "students", "Students"),
+  };
+}
+
+export async function getCoursesFromApi(): Promise<ManagedCourse[]> {
+  const config = getConfig();
+  let response: Response;
+  try {
+    response = await fetch(courseCreationUrl(), {
+      method: "GET",
+      headers: authHeaders(config),
+      credentials: config.cookieAuth ? "include" : "same-origin",
+    });
+  } catch {
+    throw new Error(
+      "Could not load courses from the backend. Check that it is running and allows this frontend origin through CORS.",
+    );
+  }
+
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    body = undefined;
+  }
+  if (!response.ok) {
+    const data = object(body);
+    const detail =
+      typeof data?.error === "string"
+        ? data.error
+        : typeof data?.message === "string"
+          ? data.message
+          : "The backend could not load courses.";
+    throw new Error(`${detail} (HTTP ${response.status})`);
+  }
+
+  const root = object(body);
+  const nestedData = object(root?.data);
+  const rows = Array.isArray(body)
+    ? body
+    : Array.isArray(root?.courses)
+      ? root.courses
+      : Array.isArray(nestedData?.courses)
+        ? nestedData.courses
+        : undefined;
+  if (!rows)
+    throw new Error('The backend response must contain a "courses" array.');
+  return rows.map(mapApiCourse);
+}
+
 /** Create a course and retain the database ID returned by the backend. */
 export async function createCourse(
   candidate: ManagedCourse,
