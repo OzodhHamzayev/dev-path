@@ -226,8 +226,12 @@ test("editing preserves course identity and updates its public detail page", asy
   await user.type(screen.getByLabelText("Price (USD)"), "64.50");
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   expect(
-    screen.getByText("Your course changes are saved in this browser only."),
+    await screen.findByText("“React in Practice” was updated successfully."),
   ).toBeTruthy();
+  expect(fetch).toHaveBeenCalledWith(
+    "http://localhost:8080/api/admin/courses/react",
+    expect.objectContaining({ method: "PUT" }),
+  );
   const updated = JSON.parse(localStorage.getItem(COURSE_STORAGE_KEY)!).find(
     (c: { id: string }) => c.id === "react",
   );
@@ -376,7 +380,5 @@ test("storage failures are reported without pretending changes were saved", asyn
   expect(screen.getByRole("alert").textContent).toContain(
     "Changes could not be saved",
   );
-  expect(
-    screen.queryByText("Your course changes are saved in this browser only."),
-  ).toBeNull();
+  expect(screen.queryByText("was updated successfully.")).toBeNull();
 });

@@ -35,6 +35,15 @@ export function AdminCourses({
   const [page, setPage] = useState(1);
   const [deleting, setDeleting] = useState<ManagedCourse | null>(null);
   const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState(() => {
+    const createdTitle = location.state?.createdTitle;
+    if (typeof createdTitle === "string")
+      return `“${createdTitle}” was created successfully.`;
+    const updatedTitle = location.state?.updatedTitle;
+    return typeof updatedTitle === "string"
+      ? `“${updatedTitle}” was updated successfully.`
+      : "";
+  });
   const [deleteError, setDeleteError] = useState("");
   const filtered = useMemo(() => {
     const result = courses.filter(
@@ -95,6 +104,9 @@ export function AdminCourses({
           <strong>Course creation is connected to the backend.</strong> This
           list is a browser copy. Editing, publishing, and deleting are still
           browser-only.
+          <strong>Course creation and deletion are connected to the backend.</strong>{" "}
+          Updating is connected too. This list is a browser copy, and
+          publishing is still browser-only.
         </p>
       </div>
       <div className="admin-stats">
