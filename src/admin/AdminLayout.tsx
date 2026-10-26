@@ -65,7 +65,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
         <div className="admin-sidebar-bottom">
           <ShieldCheck size={17} />
           <div>
-            Frontend preview<small>No server changes are made.</small>
+            Course creation API<small>Other changes are browser-only.</small>
           </div>
         </div>
       </aside>

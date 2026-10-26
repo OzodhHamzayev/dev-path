@@ -24,6 +24,7 @@ import {
   type ManagedCourse,
 } from "../courses/CourseStore";
 import { CourseVisual } from "../components/CourseVisual";
+import { createCourse } from "../api/courses";
 import { AdminLayout } from "./AdminLayout";
 
 type Values = {
@@ -92,11 +93,13 @@ function EditorForm({ course }: { course?: ManagedCourse }) {
   const location = useLocation();
   const [values, setValues] = useState<Values>(() => fromCourse(course));
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isSaving, setIsSaving] = useState(false);
+  const submitting = useRef(false);
   const [notice, setNotice] = useState(
-    location.state?.created ? "Your new course is saved." : "",
+    location.state?.created ? "Your course was created on the backend." : "",
   );
   const formRef = useRef<HTMLFormElement>(null);
-  const { saveCourse, storageError } = useCourseStore();
+  const { saveCourse, cacheCreatedCourse, storageError } = useCourseStore();
   const nav = useNavigate();
   const dirty = JSON.stringify(values) !== JSON.stringify(fromCourse(course));
   useEffect(() => {
@@ -111,11 +114,12 @@ function EditorForm({ course }: { course?: ManagedCourse }) {
 
   function change<K extends keyof Values>(key: K, value: Values[K]) {
     setValues((v) => ({ ...v, [key]: value }));
-    setErrors((e) => ({ ...e, [key]: "" }));
+    setErrors((e) => ({ ...e, [key]: "", submit: "" }));
     setNotice("");
   }
-  function save(event: FormEvent) {
+  async function save(event: FormEvent) {
     event.preventDefault();
+    if (submitting.current) return;
     const next: Record<string, string> = {};
     if (values.title.trim().length < 3)
       next.title = "Give your course a title of at least 3 characters.";
@@ -141,6 +145,9 @@ function EditorForm({ course }: { course?: ManagedCourse }) {
     )
       next.price =
         "Enter a price from $0 to $10,000 with at most two decimals.";
+    if (!course && !next.price && !Number.isInteger(Number(values.price)))
+      next.price =
+        "The current backend accepts whole-dollar prices. Enter a whole number.";
     if (
       !values.hours.trim() ||
       !Number.isFinite(Number(values.hours)) ||
@@ -148,6 +155,8 @@ function EditorForm({ course }: { course?: ManagedCourse }) {
       Number(values.hours) > 500
     )
       next.hours = "Enter a duration between 0.5 and 500 hours.";
+    if (!course && !next.hours && !Number.isInteger(Number(values.hours)))
+      next.hours = "The current backend accepts a whole number of hours.";
     setErrors(next);
     if (Object.keys(next).length) {
       requestAnimationFrame(() =>
@@ -185,16 +194,35 @@ function EditorForm({ course }: { course?: ManagedCourse }) {
       status: values.status,
       rating: course?.rating ?? 0,
       students: course?.students ?? 0,
+      backendId: course?.backendId,
     };
-    if (saveCourse(updated)) {
-      setNotice(
-        course ? "Your course changes are saved." : "Your new course is saved.",
-      );
-      if (!course)
-        nav(`/admin/courses/${updated.id}/edit`, {
+
+    if (!course) {
+      submitting.current = true;
+      setIsSaving(true);
+      try {
+        const created = await createCourse(updated);
+        cacheCreatedCourse(created);
+        nav(`/admin/courses/${created.id}/edit`, {
           replace: true,
           state: { created: true },
         });
+      } catch (error) {
+        setErrors({
+          submit:
+            error instanceof Error
+              ? error.message
+              : "The course could not be created.",
+        });
+      } finally {
+        submitting.current = false;
+        setIsSaving(false);
+      }
+      return;
+    }
+
+    if (saveCourse(updated)) {
+      setNotice("Your course changes are saved in this browser only.");
     }
   }
   function inputProps(key: keyof Values) {
@@ -234,8 +262,9 @@ function EditorForm({ course }: { course?: ManagedCourse }) {
       <div className="admin-preview-notice">
         <span className="admin-preview-dot" />
         <p>
-          Changes are saved in this browser. <strong>Published</strong> courses
-          appear in the catalog; <strong>drafts</strong> stay in your workspace.
+          {course
+            ? "Editing, publishing, and deleting currently change the browser copy only. Their backend routes are not connected yet."
+            : "Create course sends your details to the backend. Cover, subject, and draft/published visibility are kept in this browser until the backend supports them."}
         </p>
       </div>
       {(notice || storageError) && (
@@ -247,13 +276,22 @@ function EditorForm({ course }: { course?: ManagedCourse }) {
           {storageError || notice}
         </div>
       )}
+      {errors.submit && (
+        <p className="admin-error" role="alert">
+          {errors.submit}
+        </p>
+      )}
       <form
         ref={formRef}
         onSubmit={save}
         noValidate
         className="admin-editor-grid"
       >
-        <div className="admin-editor-fields">
+        <fieldset
+          className="admin-editor-fields"
+          disabled={isSaving}
+          aria-busy={isSaving}
+        >
           <section
             className="admin-form-section"
             aria-labelledby="basics-title"
@@ -368,7 +406,7 @@ function EditorForm({ course }: { course?: ManagedCourse }) {
                   inputMode="decimal"
                   min="0"
                   max="10000"
-                  step="0.01"
+                  step={course ? "0.01" : "1"}
                   value={values.price}
                   onChange={(e) => change("price", e.target.value)}
                 />
@@ -385,9 +423,9 @@ function EditorForm({ course }: { course?: ManagedCourse }) {
                   {...inputProps("hours")}
                   type="number"
                   inputMode="decimal"
-                  min="0.5"
+                  min={course ? "0.5" : "1"}
                   max="500"
-                  step="any"
+                  step={course ? "any" : "1"}
                   placeholder="e.g. 12"
                   value={values.hours}
                   onChange={(e) => change("hours", e.target.value)}
@@ -444,15 +482,30 @@ function EditorForm({ course }: { course?: ManagedCourse }) {
             </Field>
           </section>
           <div className="admin-form-footer">
-            <Link className="button secondary" to="/admin">
+            <Link
+              className="button secondary"
+              to="/admin"
+              aria-disabled={isSaving}
+              onClick={(e) => {
+                if (isSaving) e.preventDefault();
+              }}
+            >
               Cancel
             </Link>
-            <button className="button primary" type="submit">
+            <button
+              className="button primary"
+              type="submit"
+              disabled={isSaving}
+            >
               <Save size={16} />
-              {course ? "Save changes" : "Create course"}
+              {isSaving
+                ? "Creating course…"
+                : course
+                  ? "Save changes"
+                  : "Create course"}
             </button>
           </div>
-        </div>
+        </fieldset>
         <aside className="admin-preview-column">
           <div className="admin-preview-title">
             <Eye size={15} />

@@ -750,6 +750,9 @@ button.admin-status:hover {
   align-items: start;
 }
 .admin-editor-fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
   display: grid;
   gap: 20px;
   min-width: 0;

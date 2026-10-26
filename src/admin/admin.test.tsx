@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { App } from "../main";
@@ -9,6 +15,18 @@ import { COURSE_STORAGE_KEY } from "../courses/CourseStore";
 
 beforeEach(() => {
   localStorage.clear();
+  sessionStorage.clear();
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockImplementation(
+        async () =>
+          new Response(JSON.stringify({ course: { ID: 101 } }), {
+            status: 201,
+          }),
+      ),
+  );
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
   // jsdom has no native dialog implementation; real-browser checks exercise it.
   HTMLDialogElement.prototype.showModal = function () {
@@ -21,6 +39,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 function open(path = "/admin") {
   return render(
@@ -29,6 +48,128 @@ function open(path = "/admin") {
     </MemoryRouter>,
   );
 }
+
+async function fillNewCourse(user: ReturnType<typeof userEvent.setup>) {
+  await user.type(screen.getByLabelText("Course title"), "Go API Essentials");
+  await user.type(
+    screen.getByLabelText("Course description"),
+    "Build useful APIs with Go, Gin, and PostgreSQL through a practical project.",
+  );
+  await user.type(screen.getByLabelText("Instructor name"), "Ozod Hamzayev");
+  await user.type(screen.getByLabelText("Subject / technology"), "Go");
+  await user.type(screen.getByLabelText("Duration (hours)"), "12");
+}
+
+test("backend errors appear in the form and a retry creates only one cached course", async () => {
+  const user = userEvent.setup();
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "Course already exists" }), {
+        status: 409,
+      }),
+    )
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify({ id: 202 }), { status: 201 }),
+    );
+  vi.stubGlobal("fetch", fetchMock);
+  open("/admin/courses/new");
+  await fillNewCourse(user);
+  await user.click(screen.getByRole("button", { name: "Create course" }));
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    "Course already exists (HTTP 409)",
+  );
+  expect(localStorage.getItem(COURSE_STORAGE_KEY)).toBeNull();
+  expect(
+    (screen.getByLabelText("Course title") as HTMLInputElement).value,
+  ).toBe("Go API Essentials");
+  await user.click(screen.getByRole("button", { name: "Create course" }));
+  expect(
+    await screen.findByText("Your course was created on the backend."),
+  ).toBeTruthy();
+  expect(JSON.parse(localStorage.getItem(COURSE_STORAGE_KEY)!)).toHaveLength(
+    13,
+  );
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+});
+
+test("a pending submission disables the form and repeated submit events do not duplicate POST", async () => {
+  const user = userEvent.setup();
+  let finish: (value: Response) => void = () => {};
+  const fetchMock = vi.fn().mockImplementation(
+    () =>
+      new Promise<Response>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  open("/admin/courses/new");
+  await fillNewCourse(user);
+  await user.click(screen.getByRole("button", { name: "Create course" }));
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Creating course…",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  fireEvent.submit(document.querySelector("form.admin-editor-grid")!);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  finish(
+    new Response(JSON.stringify({ course: { id: 303 } }), { status: 201 }),
+  );
+  expect(
+    await screen.findByText("Your course was created on the backend."),
+  ).toBeTruthy();
+  expect(JSON.parse(localStorage.getItem(COURSE_STORAGE_KEY)!)[0].id).toBe(
+    "303",
+  );
+});
+
+test("create validates integer fields used by the Go model before sending a request", async () => {
+  const user = userEvent.setup();
+  open("/admin/courses/new");
+  await fillNewCourse(user);
+  await user.clear(screen.getByLabelText("Price (USD)"));
+  await user.type(screen.getByLabelText("Price (USD)"), "12.50");
+  await user.clear(screen.getByLabelText("Duration (hours)"));
+  await user.type(screen.getByLabelText("Duration (hours)"), "1.5");
+  await user.click(screen.getByRole("button", { name: "Create course" }));
+  expect(
+    screen.getByText(
+      "The current backend accepts whole-dollar prices. Enter a whole number.",
+    ),
+  ).toBeTruthy();
+  expect(
+    screen.getByText("The current backend accepts a whole number of hours."),
+  ).toBeTruthy();
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+test("a browser cache failure after server creation does not offer to submit the POST again", async () => {
+  const user = userEvent.setup();
+  open("/admin/courses/new");
+  await fillNewCourse(user);
+  const original = Storage.prototype.setItem;
+  vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (
+    this: Storage,
+    key,
+    value,
+  ) {
+    if (key === COURSE_STORAGE_KEY)
+      throw new DOMException("Quota exceeded", "QuotaExceededError");
+    original.call(this, key, value);
+  });
+  await user.click(screen.getByRole("button", { name: "Create course" }));
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    "The course was created on the backend",
+  );
+  expect(
+    await screen.findByRole("heading", { name: "Refine your course." }),
+  ).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Create course" })).toBeNull();
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
 
 test("create validates the form and publishes a persistent course to the student catalog", async () => {
   const user = userEvent.setup();
@@ -48,7 +189,9 @@ test("create validates the form and publishes a persistent course to the student
   await user.type(screen.getByLabelText("Duration (hours)"), "14");
   await user.selectOptions(screen.getByLabelText("Visibility"), "published");
   await user.click(screen.getByRole("button", { name: "Create course" }));
-  expect(screen.getByText("Your new course is saved.")).toBeTruthy();
+  expect(
+    await screen.findByText("Your course was created on the backend."),
+  ).toBeTruthy();
   const stored = JSON.parse(localStorage.getItem(COURSE_STORAGE_KEY)!);
   expect(stored).toHaveLength(13);
   expect(stored[0]).toMatchObject({
@@ -57,6 +200,8 @@ test("create validates the form and publishes a persistent course to the student
     hours: 14,
     initials: "OH",
     status: "published",
+    id: "101",
+    backendId: "101",
   });
   view.unmount();
   open("/courses");
@@ -74,7 +219,9 @@ test("editing preserves course identity and updates its public detail page", asy
   await user.clear(screen.getByLabelText("Price (USD)"));
   await user.type(screen.getByLabelText("Price (USD)"), "64.50");
   await user.click(screen.getByRole("button", { name: "Save changes" }));
-  expect(screen.getByText("Your course changes are saved.")).toBeTruthy();
+  expect(
+    screen.getByText("Your course changes are saved in this browser only."),
+  ).toBeTruthy();
   const updated = JSON.parse(localStorage.getItem(COURSE_STORAGE_KEY)!).find(
     (c: { id: string }) => c.id === "react",
   );
@@ -219,5 +366,7 @@ test("storage failures are reported without pretending changes were saved", asyn
   expect(screen.getByRole("alert").textContent).toContain(
     "Changes could not be saved",
   );
-  expect(screen.queryByText("Your course changes are saved.")).toBeNull();
+  expect(
+    screen.queryByText("Your course changes are saved in this browser only."),
+  ).toBeNull();
 });
