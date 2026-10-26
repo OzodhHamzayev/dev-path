@@ -94,6 +94,41 @@ test("rejects GET courses without numeric database IDs", async () => {
   );
 });
 
+test("loads courses from a custom nested backend response wrapper", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          "successfully loaded": [
+            {
+              ID: 21,
+              Title: "PostgreSQL",
+              Description: "Learn SQL",
+              Category: "Programming",
+              Level: "Beginner",
+              Price: "29.00",
+              Rating: "4.5",
+              Duration: 8,
+              Instructor: "Alex Morgan",
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    ),
+  );
+
+  const result = await getCoursesFromApi();
+
+  expect(result[0]).toMatchObject({
+    id: "21",
+    title: "PostgreSQL",
+    price: 29,
+    rating: 4.5,
+  });
+});
+
 test("posts the Go DTO, sends an existing Bearer token and retains the server-assigned ID", async () => {
   sessionStorage.setItem("token", "test-access-token");
   const fetchMock = vi

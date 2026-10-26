@@ -188,10 +188,12 @@ export async function getCoursesFromApi(): Promise<ManagedCourse[]> {
   }
 
   let body: unknown;
+  let validJson = true;
   try {
     body = await response.json();
   } catch {
     body = undefined;
+    validJson = false;
   }
   if (!response.ok) {
     const data = object(body);
@@ -204,15 +206,28 @@ export async function getCoursesFromApi(): Promise<ManagedCourse[]> {
     throw new Error(`${detail} (HTTP ${response.status})`);
   }
 
-  const root = object(body);
-  const nestedData = object(root?.data);
-  const rows = Array.isArray(body)
-    ? body
-    : Array.isArray(root?.courses)
-      ? root.courses
-      : Array.isArray(nestedData?.courses)
-        ? nestedData.courses
-        : undefined;
+  if (!validJson)
+    throw new Error(
+      "The backend returned invalid JSON. Send one JSON response from GetAllCourses.",
+    );
+
+  function findCourseRows(value: unknown, depth = 0): unknown[] | undefined {
+    if (depth > 4) return undefined;
+    if (Array.isArray(value)) return value;
+    const data = object(value);
+    if (!data) return undefined;
+    const preferred = data.courses ?? data.Courses ?? data.course ?? data.data;
+    if (Array.isArray(preferred)) return preferred;
+    const fromPreferred = findCourseRows(preferred, depth + 1);
+    if (fromPreferred) return fromPreferred;
+    for (const nested of Object.values(data)) {
+      const found = findCourseRows(nested, depth + 1);
+      if (found) return found;
+    }
+    return undefined;
+  }
+
+  const rows = findCourseRows(body);
   if (!rows)
     throw new Error('The backend response must contain a "courses" array.');
   return rows.map(mapApiCourse);
