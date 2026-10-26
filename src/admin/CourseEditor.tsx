@@ -203,9 +203,9 @@ function EditorForm({ course }: { course?: ManagedCourse }) {
       try {
         const created = await createCourse(updated);
         cacheCreatedCourse(created);
-        nav(`/admin/courses/${created.id}/edit`, {
+        nav("/admin", {
           replace: true,
-          state: { created: true },
+          state: { createdTitle: created.title },
         });
       } catch (error) {
         setErrors({

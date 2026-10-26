@@ -85,7 +85,9 @@ test("backend errors appear in the form and a retry creates only one cached cour
   ).toBe("Go API Essentials");
   await user.click(screen.getByRole("button", { name: "Create course" }));
   expect(
-    await screen.findByText("Your course was created on the backend."),
+    await screen.findByText(
+      "“Go API Essentials” was created successfully.",
+    ),
   ).toBeTruthy();
   expect(JSON.parse(localStorage.getItem(COURSE_STORAGE_KEY)!)).toHaveLength(
     13,
@@ -119,7 +121,9 @@ test("a pending submission disables the form and repeated submit events do not d
     new Response(JSON.stringify({ course: { id: 303 } }), { status: 201 }),
   );
   expect(
-    await screen.findByText("Your course was created on the backend."),
+    await screen.findByText(
+      "“Go API Essentials” was created successfully.",
+    ),
   ).toBeTruthy();
   expect(JSON.parse(localStorage.getItem(COURSE_STORAGE_KEY)!)[0].id).toBe(
     "303",
@@ -165,7 +169,7 @@ test("a browser cache failure after server creation does not offer to submit the
     "The course was created on the backend",
   );
   expect(
-    await screen.findByRole("heading", { name: "Refine your course." }),
+    await screen.findByRole("heading", { name: "Your course library." }),
   ).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Create course" })).toBeNull();
   expect(fetch).toHaveBeenCalledTimes(1);
@@ -190,7 +194,9 @@ test("create validates the form and publishes a persistent course to the student
   await user.selectOptions(screen.getByLabelText("Visibility"), "published");
   await user.click(screen.getByRole("button", { name: "Create course" }));
   expect(
-    await screen.findByText("Your course was created on the backend."),
+    await screen.findByText(
+      "“Build APIs with Go” was created successfully.",
+    ),
   ).toBeTruthy();
   const stored = JSON.parse(localStorage.getItem(COURSE_STORAGE_KEY)!);
   expect(stored).toHaveLength(13);

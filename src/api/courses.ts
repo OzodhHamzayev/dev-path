@@ -16,6 +16,10 @@ export function courseCreationUrl() {
   return `${base}/${path.replace(/^\/+/, "")}`;
 }
 
+export function courseDeletionUrl(id: string) {
+  return `${courseCreationUrl()}/${encodeURIComponent(id)}`;
+}
+
 type JsonObject = Record<string, unknown>;
 function object(value: unknown): JsonObject | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -106,4 +110,49 @@ export async function createCourse(
 
   const backendId = getServerId(body);
   return { ...candidate, id: backendId ?? candidate.id, backendId };
+}
+
+export async function deleteCourseFromApi(id: string): Promise<void> {
+  const config = getConfig();
+  const headers = new Headers();
+  if (!config.cookieAuth) {
+    const token = readToken(config.tokenKey);
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(courseDeletionUrl(id), {
+      method: "DELETE",
+      headers,
+      credentials: config.cookieAuth ? "include" : "same-origin",
+    });
+  } catch {
+    throw new Error(
+      "Could not connect to the backend. Check that it is running and allows this frontend origin through CORS.",
+    );
+  }
+
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    body = undefined;
+  }
+  if (!response.ok) {
+    const data = object(body);
+    const detail =
+      typeof data?.error === "string"
+        ? data.error
+        : typeof data?.message === "string"
+          ? data.message
+          : response.status === 401
+            ? "Please sign in again."
+            : response.status === 403
+              ? "Your account cannot delete courses."
+              : response.status === 404
+                ? "The course was not found on the backend."
+                : "The backend could not delete this course.";
+    throw new Error(`${detail} (HTTP ${response.status})`);
+  }
 }
