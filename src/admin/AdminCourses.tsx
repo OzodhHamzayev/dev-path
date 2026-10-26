@@ -37,9 +37,12 @@ export function AdminCourses({
   const [page, setPage] = useState(1);
   const [deleting, setDeleting] = useState<ManagedCourse | null>(null);
   const [notice, setNotice] = useState(() => {
-    const title = location.state?.createdTitle;
-    return typeof title === "string"
-      ? `“${title}” was created successfully.`
+    const createdTitle = location.state?.createdTitle;
+    if (typeof createdTitle === "string")
+      return `“${createdTitle}” was created successfully.`;
+    const updatedTitle = location.state?.updatedTitle;
+    return typeof updatedTitle === "string"
+      ? `“${updatedTitle}” was updated successfully.`
       : "";
   });
   const [deleteError, setDeleteError] = useState("");
@@ -117,8 +120,8 @@ export function AdminCourses({
         <ShieldNote />
         <p>
           <strong>Course creation and deletion are connected to the backend.</strong>{" "}
-          This list is a browser copy. Editing and publishing are still
-          browser-only.
+          Updating is connected too. This list is a browser copy, and
+          publishing is still browser-only.
         </p>
       </div>
       <div className="admin-stats">

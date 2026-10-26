@@ -20,6 +20,10 @@ export function courseDeletionUrl(id: string) {
   return `${courseCreationUrl()}/${encodeURIComponent(id)}`;
 }
 
+export function courseUpdateUrl(id: string) {
+  return `${courseCreationUrl()}/${encodeURIComponent(id)}`;
+}
+
 type JsonObject = Record<string, unknown>;
 function object(value: unknown): JsonObject | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -66,16 +70,36 @@ function errorMessage(status: number, body: unknown) {
   return `${detail || defaults[status] || "The backend could not create this course."} (HTTP ${status})`;
 }
 
+function coursePayload(candidate: ManagedCourse) {
+  return {
+    title: candidate.title,
+    description: candidate.description,
+    category: candidate.category,
+    level: candidate.level,
+    price: candidate.price,
+    rating: candidate.rating,
+    duration: candidate.hours,
+    instructor: candidate.instructor,
+  };
+}
+
+function authHeaders(config: ReturnType<typeof getConfig>, json = false) {
+  const headers = new Headers(
+    json ? { "Content-Type": "application/json" } : undefined,
+  );
+  if (!config.cookieAuth) {
+    const token = readToken(config.tokenKey);
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+  }
+  return headers;
+}
+
 /** Create a course and retain the database ID returned by the backend. */
 export async function createCourse(
   candidate: ManagedCourse,
 ): Promise<ManagedCourse> {
   const config = getConfig();
-  const headers = new Headers({ "Content-Type": "application/json" });
-  if (!config.cookieAuth) {
-    const token = readToken(config.tokenKey);
-    if (token) headers.set("Authorization", `Bearer ${token}`);
-  }
+  const headers = authHeaders(config, true);
 
   let response: Response;
   try {
@@ -83,16 +107,7 @@ export async function createCourse(
       method: "POST",
       headers,
       credentials: config.cookieAuth ? "include" : "same-origin",
-      body: JSON.stringify({
-        title: candidate.title,
-        description: candidate.description,
-        category: candidate.category,
-        level: candidate.level,
-        price: candidate.price,
-        rating: candidate.rating,
-        duration: candidate.hours,
-        instructor: candidate.instructor,
-      }),
+      body: JSON.stringify(coursePayload(candidate)),
     });
   } catch {
     throw new Error(
@@ -112,13 +127,37 @@ export async function createCourse(
   return { ...candidate, id: backendId ?? candidate.id, backendId };
 }
 
+export async function updateCourseInApi(
+  id: string,
+  candidate: ManagedCourse,
+): Promise<void> {
+  const config = getConfig();
+  let response: Response;
+  try {
+    response = await fetch(courseUpdateUrl(id), {
+      method: "PUT",
+      headers: authHeaders(config, true),
+      credentials: config.cookieAuth ? "include" : "same-origin",
+      body: JSON.stringify(coursePayload(candidate)),
+    });
+  } catch {
+    throw new Error(
+      "Could not connect to the backend. Check that it is running and allows this frontend origin through CORS.",
+    );
+  }
+
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    body = undefined;
+  }
+  if (!response.ok) throw new Error(errorMessage(response.status, body));
+}
+
 export async function deleteCourseFromApi(id: string): Promise<void> {
   const config = getConfig();
-  const headers = new Headers();
-  if (!config.cookieAuth) {
-    const token = readToken(config.tokenKey);
-    if (token) headers.set("Authorization", `Bearer ${token}`);
-  }
+  const headers = authHeaders(config);
 
   let response: Response;
   try {

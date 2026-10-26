@@ -4,7 +4,9 @@ import {
   createCourse,
   courseCreationUrl,
   courseDeletionUrl,
+  courseUpdateUrl,
   deleteCourseFromApi,
+  updateCourseInApi,
 } from "./courses";
 import { courses } from "../data";
 import type { ManagedCourse } from "../courses/CourseStore";
@@ -115,6 +117,34 @@ test("accepts an empty successful response without inventing a backend ID", asyn
   const result = await createCourse(candidate);
   expect(result.id).toBe(candidate.id);
   expect(result.backendId).toBeUndefined();
+});
+
+test("updates a course through PUT with the Go DTO and Bearer token", async () => {
+  localStorage.setItem("token", "update-token");
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValue(new Response(JSON.stringify({ id: 42 }), { status: 200 }));
+  vi.stubGlobal("fetch", fetchMock);
+
+  await updateCourseInApi("42", {
+    ...candidate,
+    title: "Updated React",
+    price: 79,
+  });
+
+  expect(courseUpdateUrl("42")).toBe(
+    "http://localhost:8080/api/admin/courses/42",
+  );
+  const [url, options] = fetchMock.mock.calls[0];
+  expect(url).toBe("http://localhost:8080/api/admin/courses/42");
+  expect(options.method).toBe("PUT");
+  expect(options.headers.get("Authorization")).toBe("Bearer update-token");
+  expect(options.headers.get("Content-Type")).toBe("application/json");
+  expect(JSON.parse(options.body)).toMatchObject({
+    title: "Updated React",
+    price: 79,
+    duration: candidate.hours,
+  });
 });
 
 test("deletes a course by backend ID with the existing Bearer token", async () => {

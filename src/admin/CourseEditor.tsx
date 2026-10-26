@@ -24,7 +24,7 @@ import {
   type ManagedCourse,
 } from "../courses/CourseStore";
 import { CourseVisual } from "../components/CourseVisual";
-import { createCourse } from "../api/courses";
+import { createCourse, updateCourseInApi } from "../api/courses";
 import { AdminLayout } from "./AdminLayout";
 
 type Values = {
@@ -221,8 +221,26 @@ function EditorForm({ course }: { course?: ManagedCourse }) {
       return;
     }
 
-    if (saveCourse(updated)) {
-      setNotice("Your course changes are saved in this browser only.");
+    submitting.current = true;
+    setIsSaving(true);
+    try {
+      await updateCourseInApi(course.backendId ?? course.id, updated);
+      if (saveCourse(updated)) {
+        nav("/admin", {
+          replace: true,
+          state: { updatedTitle: updated.title },
+        });
+      }
+    } catch (error) {
+      setErrors({
+        submit:
+          error instanceof Error
+            ? error.message
+            : "The course could not be updated.",
+      });
+    } finally {
+      submitting.current = false;
+      setIsSaving(false);
     }
   }
   function inputProps(key: keyof Values) {
@@ -263,7 +281,7 @@ function EditorForm({ course }: { course?: ManagedCourse }) {
         <span className="admin-preview-dot" />
         <p>
           {course
-            ? "Editing, publishing, and deleting currently change the browser copy only. Their backend routes are not connected yet."
+            ? "Saving changes updates this course through the backend. Cover, subject, and visibility remain in the browser copy until the backend supports them."
             : "Create course sends your details to the backend. Cover, subject, and draft/published visibility are kept in this browser until the backend supports them."}
         </p>
       </div>
@@ -499,7 +517,9 @@ function EditorForm({ course }: { course?: ManagedCourse }) {
             >
               <Save size={16} />
               {isSaving
-                ? "Creating course…"
+                ? course
+                  ? "Saving changes…"
+                  : "Creating course…"
                 : course
                   ? "Save changes"
                   : "Create course"}
