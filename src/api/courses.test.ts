@@ -70,12 +70,12 @@ test("supports configurable URLs and HttpOnly-cookie authentication without a Be
   const fetchMock = vi
     .fn()
     .mockResolvedValue(
-      new Response(JSON.stringify({ id: "server-course" }), { status: 200 }),
+      new Response(JSON.stringify({ id: "42" }), { status: 200 }),
     );
   vi.stubGlobal("fetch", fetchMock);
   const result = await createCourse(candidate);
   expect(courseCreationUrl()).toBe("http://localhost:9090/courses/create");
-  expect(result.id).toBe("server-course");
+  expect(result.id).toBe("42");
   expect(fetchMock.mock.calls[0][1].credentials).toBe("include");
   expect(fetchMock.mock.calls[0][1].headers.has("Authorization")).toBe(false);
 });
@@ -117,6 +117,23 @@ test("accepts an empty successful response without inventing a backend ID", asyn
   const result = await createCourse(candidate);
   expect(result.id).toBe(candidate.id);
   expect(result.backendId).toBeUndefined();
+});
+
+test("reads the ID from the backend's successfully-created response wrapper", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ "successfully created": { id: 14 } }),
+        { status: 201 },
+      ),
+    ),
+  );
+
+  const result = await createCourse(candidate);
+
+  expect(result.id).toBe("14");
+  expect(result.backendId).toBe("14");
 });
 
 test("updates a course through PUT with the Go DTO and Bearer token", async () => {

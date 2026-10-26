@@ -43,11 +43,16 @@ function readToken(key: string) {
 
 function getServerId(body: unknown): string | undefined {
   const root = object(body);
-  const data = object(root?.course) ?? object(root?.data) ?? root;
-  const value = data?.id ?? data?.ID;
-  if (typeof value === "number" && Number.isSafeInteger(value) && value > 0)
-    return String(value);
-  if (typeof value === "string" && /^[a-zA-Z0-9_-]+$/.test(value)) return value;
+  if (!root) return undefined;
+  const candidates = [root, object(root.course), object(root.data)];
+  for (const value of Object.values(root)) candidates.push(object(value));
+  for (const candidate of candidates) {
+    const value = candidate?.id ?? candidate?.ID;
+    if (typeof value === "number" && Number.isSafeInteger(value) && value > 0)
+      return String(value);
+    if (typeof value === "string" && /^\d+$/.test(value) && Number(value) > 0)
+      return value;
+  }
   return undefined;
 }
 
