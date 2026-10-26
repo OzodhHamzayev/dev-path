@@ -15,7 +15,8 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
+import { deleteCourseFromApi } from "../api/courses";
 import { useCourseStore, type ManagedCourse } from "../courses/CourseStore";
 import { CourseVisual } from "../components/CourseVisual";
 import { AdminLayout } from "./AdminLayout";
@@ -28,14 +29,21 @@ export function AdminCourses({
   onDeleteCourse: (id: string) => void;
 }) {
   const { courses, saveCourse, deleteCourse, storageError } = useCourseStore();
+  const location = useLocation();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const [category, setCategory] = useState("all");
   const [sort, setSort] = useState("default");
   const [page, setPage] = useState(1);
   const [deleting, setDeleting] = useState<ManagedCourse | null>(null);
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState(() => {
+    const title = location.state?.createdTitle;
+    return typeof title === "string"
+      ? `“${title}” was created successfully.`
+      : "";
+  });
   const [deleteError, setDeleteError] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
   const filtered = useMemo(() => {
     const result = courses.filter(
       (c) =>
@@ -64,17 +72,35 @@ export function AdminCourses({
     setSort("default");
     setPage(1);
   }
-  function confirmDelete() {
+  async function confirmDelete() {
     if (!deleting) return;
-    if (deleteCourse(deleting.id)) {
+    setIsDeleting(true);
+    setDeleteError("");
+    try {
+      // Seeded demo courses only exist in this browser. Courses returned by
+      // the backend carry backendId and are deleted from the API first.
+      if (deleting.backendId)
+        await deleteCourseFromApi(deleting.backendId);
+      if (!deleteCourse(deleting.id)) {
+        setDeleteError(
+          deleting.backendId
+            ? "The backend deleted the course, but the browser copy could not be updated. Reload the page to refresh it."
+            : "The course could not be deleted. Check browser storage and try again.",
+        );
+        return;
+      }
       onDeleteCourse(deleting.id);
       setNotice(`“${deleting.title}” was deleted.`);
       setDeleting(null);
-      setDeleteError("");
-    } else
+    } catch (error) {
       setDeleteError(
-        "The course could not be deleted. Check browser storage and try again.",
+        error instanceof Error
+          ? error.message
+          : "The course could not be deleted.",
       );
+    } finally {
+      setIsDeleting(false);
+    }
   }
   return (
     <AdminLayout>
@@ -92,8 +118,8 @@ export function AdminCourses({
       <div className="admin-preview-notice">
         <ShieldNote />
         <p>
-          <strong>Course creation is connected to the backend.</strong> This
-          list is a browser copy. Editing, publishing, and deleting are still
+          <strong>Course creation and deletion are connected to the backend.</strong>{" "}
+          This list is a browser copy. Editing and publishing are still
           browser-only.
         </p>
       </div>
@@ -450,7 +476,10 @@ export function AdminCourses({
         <DeleteCourseDialog
           title={deleting.title}
           error={deleteError}
-          onCancel={() => setDeleting(null)}
+          deleting={isDeleting}
+          onCancel={() => {
+            if (!isDeleting) setDeleting(null);
+          }}
           onDelete={confirmDelete}
         />
       )}

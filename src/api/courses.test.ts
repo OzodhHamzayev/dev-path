@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { createCourse, courseCreationUrl } from "./courses";
+import {
+  createCourse,
+  courseCreationUrl,
+  courseDeletionUrl,
+  deleteCourseFromApi,
+} from "./courses";
 import { courses } from "../data";
 import type { ManagedCourse } from "../courses/CourseStore";
 
@@ -110,4 +115,39 @@ test("accepts an empty successful response without inventing a backend ID", asyn
   const result = await createCourse(candidate);
   expect(result.id).toBe(candidate.id);
   expect(result.backendId).toBeUndefined();
+});
+
+test("deletes a course by backend ID with the existing Bearer token", async () => {
+  sessionStorage.setItem("token", "test-access-token");
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValue(new Response(null, { status: 204 }));
+  vi.stubGlobal("fetch", fetchMock);
+
+  await deleteCourseFromApi("42");
+
+  expect(courseDeletionUrl("42")).toBe(
+    "http://localhost:8080/api/admin/courses/42",
+  );
+  const [url, options] = fetchMock.mock.calls[0];
+  expect(url).toBe("http://localhost:8080/api/admin/courses/42");
+  expect(options.method).toBe("DELETE");
+  expect(options.headers.get("Authorization")).toBe(
+    "Bearer test-access-token",
+  );
+});
+
+test("reports a backend delete error", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: "Course not found" }), {
+        status: 404,
+      }),
+    ),
+  );
+
+  await expect(deleteCourseFromApi("999")).rejects.toThrow(
+    "Course not found (HTTP 404)",
+  );
 });
