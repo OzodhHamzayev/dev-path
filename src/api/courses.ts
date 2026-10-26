@@ -42,18 +42,29 @@ function readToken(key: string) {
 }
 
 function getServerId(body: unknown): string | undefined {
-  const root = object(body);
-  if (!root) return undefined;
-  const candidates = [root, object(root.course), object(root.data)];
-  for (const value of Object.values(root)) candidates.push(object(value));
-  for (const candidate of candidates) {
-    const value = candidate?.id ?? candidate?.ID;
-    if (typeof value === "number" && Number.isSafeInteger(value) && value > 0)
-      return String(value);
-    if (typeof value === "string" && /^\d+$/.test(value) && Number(value) > 0)
-      return value;
+  function findId(value: unknown, depth: number): string | undefined {
+    if (depth > 4) return undefined;
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const found = findId(item, depth + 1);
+        if (found) return found;
+      }
+      return undefined;
+    }
+    const data = object(value);
+    if (!data) return undefined;
+    const id = data.id ?? data.ID;
+    if (typeof id === "number" && Number.isSafeInteger(id) && id > 0)
+      return String(id);
+    if (typeof id === "string" && /^\d+$/.test(id) && Number(id) > 0)
+      return id;
+    for (const nested of Object.values(data)) {
+      const found = findId(nested, depth + 1);
+      if (found) return found;
+    }
+    return undefined;
   }
-  return undefined;
+  return findId(body, 0);
 }
 
 function errorMessage(
@@ -137,7 +148,11 @@ export async function createCourse(
     throw new Error(errorMessage(response.status, body, "create"));
 
   const backendId = getServerId(body);
-  return { ...candidate, id: backendId ?? candidate.id, backendId };
+  if (!backendId)
+    throw new Error(
+      'The backend created the course but did not return its numeric database ID. Return JSON such as {"id": 14}.',
+    );
+  return { ...candidate, id: backendId, backendId };
 }
 
 export async function updateCourseInApi(

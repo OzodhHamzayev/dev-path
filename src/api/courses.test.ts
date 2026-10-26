@@ -109,14 +109,14 @@ test("explains network failures and does not convert them into local-only creati
   );
 });
 
-test("accepts an empty successful response without inventing a backend ID", async () => {
+test("rejects a successful response without a database ID", async () => {
   vi.stubGlobal(
     "fetch",
     vi.fn().mockResolvedValue(new Response(null, { status: 201 })),
   );
-  const result = await createCourse(candidate);
-  expect(result.id).toBe(candidate.id);
-  expect(result.backendId).toBeUndefined();
+  await expect(createCourse(candidate)).rejects.toThrow(
+    "did not return its numeric database ID",
+  );
 });
 
 test("reads the ID from the backend's successfully-created response wrapper", async () => {
@@ -127,6 +127,22 @@ test("reads the ID from the backend's successfully-created response wrapper", as
         JSON.stringify({ "successfully created": { id: 14 } }),
         { status: 201 },
       ),
+    ),
+  );
+
+  const result = await createCourse(candidate);
+
+  expect(result.id).toBe("14");
+  expect(result.backendId).toBe("14");
+});
+
+test("reads the ID when the backend wraps its message and object in an array", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(["successfully created", { id: 14 }]), {
+        status: 201,
+      }),
     ),
   );
 

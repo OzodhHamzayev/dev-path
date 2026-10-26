@@ -173,14 +173,8 @@ function EditorForm({ course }: { course?: ManagedCourse }) {
       .slice(0, 2)
       .join("")
       .toUpperCase();
-    const slug =
-      values.title
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-|-$/g, "")
-        .slice(0, 50) || "course";
     const updated: ManagedCourse = {
-      id: course?.id ?? `${slug}-${crypto.randomUUID().slice(0, 8)}`,
+      id: course?.id ?? crypto.randomUUID(),
       title: values.title.trim(),
       description: values.description.trim(),
       instructor: values.instructor.trim(),
