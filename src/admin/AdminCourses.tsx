@@ -89,14 +89,6 @@ export function AdminCourses({
           Create course
         </Link>
       </div>
-      <div className="admin-preview-notice">
-        <ShieldNote />
-        <p>
-          <strong>Frontend preview</strong> · Your changes are saved in this
-          browser. Published courses appear in the student catalog. A backend
-          connection is not active.
-        </p>
-      </div>
       <div className="admin-stats">
         {[
           {
