@@ -66,7 +66,7 @@ function errorMessage(status: number, body: unknown) {
   return `${detail || defaults[status] || "The backend could not create this course."} (HTTP ${status})`;
 }
 
-/** Only creation is connected. Update/delete routes have not been supplied. */
+/** Create a course and retain the database ID returned by the backend. */
 export async function createCourse(
   candidate: ManagedCourse,
 ): Promise<ManagedCourse> {

@@ -12,7 +12,7 @@ export function DeleteCourseDialog({
   error: string;
   deleting: boolean;
   onCancel: () => void;
-  onDelete: () => void;
+  onDelete: () => Promise<void>;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -40,6 +40,7 @@ export function DeleteCourseDialog({
     >
       <div className="admin-dialog-content">
         <button
+          type="button"
           className="icon-button admin-dialog-close"
           aria-label="Close delete confirmation"
           onClick={onCancel}
@@ -61,6 +62,7 @@ export function DeleteCourseDialog({
         )}
         <div className="admin-dialog-actions">
           <button
+            type="button"
             className="button secondary"
             autoFocus
             onClick={onCancel}
@@ -69,8 +71,9 @@ export function DeleteCourseDialog({
             Keep course
           </button>
           <button
+            type="button"
             className="button admin-danger-button"
-            onClick={onDelete}
+            onClick={() => void onDelete()}
             disabled={deleting}
           >
             <Trash2 size={16} />
