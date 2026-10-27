@@ -4,13 +4,15 @@ import { AlertTriangle, Trash2, X } from "lucide-react";
 export function DeleteCourseDialog({
   title,
   error,
+  deleting,
   onCancel,
   onDelete,
 }: {
   title: string;
   error: string;
+  deleting: boolean;
   onCancel: () => void;
-  onDelete: () => void;
+  onDelete: () => Promise<void>;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -38,6 +40,7 @@ export function DeleteCourseDialog({
     >
       <div className="admin-dialog-content">
         <button
+          type="button"
           className="icon-button admin-dialog-close"
           aria-label="Close delete confirmation"
           onClick={onCancel}
@@ -58,12 +61,23 @@ export function DeleteCourseDialog({
           </p>
         )}
         <div className="admin-dialog-actions">
-          <button className="button secondary" autoFocus onClick={onCancel}>
+          <button
+            type="button"
+            className="button secondary"
+            autoFocus
+            onClick={onCancel}
+            disabled={deleting}
+          >
             Keep course
           </button>
-          <button className="button admin-danger-button" onClick={onDelete}>
+          <button
+            type="button"
+            className="button admin-danger-button"
+            onClick={() => void onDelete()}
+            disabled={deleting}
+          >
             <Trash2 size={16} />
-            Delete course
+            {deleting ? "Deleting…" : "Delete course"}
           </button>
         </div>
       </div>

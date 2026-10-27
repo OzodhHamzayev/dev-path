@@ -8,6 +8,7 @@ import {
   useNavigate,
   useParams,
   useLocation,
+  Navigate,
 } from "react-router-dom";
 import {
   ArrowUpRight,
@@ -57,23 +58,100 @@ type State = {
   enrolled: string[];
   progress: Record<string, number[]>;
   user: string;
+  role: "user" | "admin" | "";
   theme: string;
 };
+const AUTH_TOKEN_KEY = "token";
+const AUTH_USER_KEY = "devpath-auth-user";
+const AUTH_ROLE_KEY = "devpath-auth-role";
+
+function tokenIsUsable(token: string) {
+  const parts = token.split(".");
+  if (parts.length !== 3) return true;
+  try {
+    const payloadPart = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = payloadPart.padEnd(
+      payloadPart.length + ((4 - (payloadPart.length % 4)) % 4),
+      "=",
+    );
+    const payload = JSON.parse(atob(padded)) as { exp?: unknown };
+    return typeof payload.exp !== "number" || payload.exp * 1000 > Date.now();
+  } catch {
+    return false;
+  }
+}
+
+function clearStoredAuth() {
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+  localStorage.removeItem(AUTH_USER_KEY);
+  localStorage.removeItem(AUTH_ROLE_KEY);
+  sessionStorage.removeItem(AUTH_TOKEN_KEY);
+}
+
+function normalizeRole(value: unknown): State["role"] {
+  if (typeof value !== "string") return "";
+  return value.trim().toLowerCase() === "admin" ? "admin" : "user";
+}
+
+function readJwtValue(token: string, keys: string[]): string | undefined {
+  const parts = token.split(".");
+  if (parts.length !== 3) return undefined;
+  try {
+    const payloadPart = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = payloadPart.padEnd(
+      payloadPart.length + ((4 - (payloadPart.length % 4)) % 4),
+      "=",
+    );
+    return findLoginValue(JSON.parse(atob(padded)), keys);
+  } catch {
+    return undefined;
+  }
+}
+
+function findLoginValue(
+  value: unknown,
+  keys: string[],
+  depth = 0,
+): string | undefined {
+  if (depth > 4 || !value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  for (const key of keys) {
+    const found = record[key];
+    if (typeof found === "string" && found.trim()) return found.trim();
+  }
+  for (const nested of Object.values(record)) {
+    const found = findLoginValue(nested, keys, depth + 1);
+    if (found) return found;
+  }
+  return undefined;
+}
 const initial: State = {
   saved: [],
   enrolled: [],
   progress: {},
   user: "",
+  role: "",
   theme: "midnight",
 };
 function readState(): State {
   try {
     const s = JSON.parse(localStorage.getItem("devpath") || "null");
+    const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    const user = localStorage.getItem(AUTH_USER_KEY) || "";
+    const role = normalizeRole(
+      localStorage.getItem(AUTH_ROLE_KEY) || s?.role,
+    );
+    if (token && !tokenIsUsable(token)) clearStoredAuth();
     return s &&
       Array.isArray(s.saved) &&
       Array.isArray(s.enrolled) &&
       typeof s.progress === "object"
-      ? { ...initial, ...s }
+      ? {
+          ...initial,
+          ...s,
+          user: token && tokenIsUsable(token) ? user || s.user || "" : "",
+          role: token && tokenIsUsable(token) ? role : "",
+        }
       : initial;
   } catch {
     return initial;
@@ -85,6 +163,39 @@ const Context = createContext<{
   toast: (s: string) => void;
 }>({ state: initial, set: () => {}, toast: () => {} });
 const useApp = () => useContext(Context);
+
+function AdminGuard({ children }: { children: React.ReactNode }) {
+  const { state } = useApp();
+  const location = useLocation();
+  let token = "";
+  try {
+    token =
+      localStorage.getItem(AUTH_TOKEN_KEY) ||
+      sessionStorage.getItem(AUTH_TOKEN_KEY) ||
+      "";
+  } catch {
+    token = "";
+  }
+
+  if (!state.user || !token || !tokenIsUsable(token)) {
+    return <Navigate to="/signin" replace state={{ from: location.pathname }} />;
+  }
+
+  if (state.role !== "admin") {
+    return (
+      <div className="container empty">
+        <ShieldCheck size={38} />
+        <h1>Admin access required.</h1>
+        <p>Your account does not have permission to manage courses.</p>
+        <Link className="button primary" to="/dashboard">
+          Back to dashboard
+        </Link>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+}
 export function App() {
   return (
     <CourseProvider>
@@ -96,6 +207,7 @@ function AppContent() {
   const [state, set] = useState(readState);
   const [message, toast] = useState("");
   const location = useLocation();
+  const nav = useNavigate();
   useEffect(() => {
     localStorage.setItem("devpath", JSON.stringify(state));
     document.documentElement.dataset.theme = state.theme;
@@ -109,6 +221,17 @@ function AppContent() {
       return () => clearTimeout(t);
     }
   }, [message]);
+  useEffect(() => {
+    function expireSession() {
+      clearStoredAuth();
+      set((current) => ({ ...current, user: "", role: "" }));
+      toast("Your session expired. Please log in again.");
+      nav("/signin");
+    }
+    window.addEventListener("devpath-auth-expired", expireSession);
+    return () =>
+      window.removeEventListener("devpath-auth-expired", expireSession);
+  }, [nav]);
   return (
     <Context.Provider value={{ state, set, toast }}>
       <Header />
@@ -124,24 +247,40 @@ function AppContent() {
           <Route
             path="/admin"
             element={
-              <AdminCourses
-                onDeleteCourse={(id) => {
-                  set((s) => {
-                    const progress = { ...s.progress };
-                    delete progress[id];
-                    return {
-                      ...s,
-                      saved: s.saved.filter((x) => x !== id),
-                      enrolled: s.enrolled.filter((x) => x !== id),
-                      progress,
-                    };
-                  });
-                }}
-              />
+              <AdminGuard>
+                <AdminCourses
+                  onDeleteCourse={(id) => {
+                    set((s) => {
+                      const progress = { ...s.progress };
+                      delete progress[id];
+                      return {
+                        ...s,
+                        saved: s.saved.filter((x) => x !== id),
+                        enrolled: s.enrolled.filter((x) => x !== id),
+                        progress,
+                      };
+                    });
+                  }}
+                />
+              </AdminGuard>
             }
           />
-          <Route path="/admin/courses/new" element={<CourseEditor />} />
-          <Route path="/admin/courses/:id/edit" element={<CourseEditor />} />
+          <Route
+            path="/admin/courses/new"
+            element={
+              <AdminGuard>
+                <CourseEditor />
+              </AdminGuard>
+            }
+          />
+          <Route
+            path="/admin/courses/:id/edit"
+            element={
+              <AdminGuard>
+                <CourseEditor />
+              </AdminGuard>
+            }
+          />
           <Route
             path="*"
             element={
@@ -192,7 +331,7 @@ function Header() {
         <nav className="desktop-nav">
           <NavLink to="/courses">Explore Courses</NavLink>
           <NavLink to="/dashboard">My Learning</NavLink>
-          <NavLink to="/admin">Admin</NavLink>
+          {state.role === "admin" && <NavLink to="/admin">Admin</NavLink>}
         </nav>
         <form
           className="nav-search"
@@ -257,8 +396,10 @@ function Header() {
         <nav className="mobile-nav">
           <Link to="/courses">Explore Courses</Link>
           <Link to="/dashboard">My Learning</Link>
-          <Link to="/admin">Admin workspace</Link>
-          <Link to="/signin">Demo sign in</Link>
+          {state.role === "admin" && (
+            <Link to="/admin">Admin workspace</Link>
+          )}
+          {!state.user && <Link to="/signin">Log in</Link>}
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -1183,6 +1324,7 @@ function Curriculum({
 function Dashboard() {
   const courses = usePublishedCourses();
   const { state, set, toast } = useApp();
+  const nav = useNavigate();
   const [navOpen, setNavOpen] = useState(false);
   const [tab, setTab] = useState("overview");
   const enrolled = courses.filter((c) => state.enrolled.includes(c.id));
@@ -1232,11 +1374,13 @@ function Dashboard() {
           {state.user && (
             <button
               onClick={() => {
-                set((s) => ({ ...s, user: "" }));
-                toast("Signed out of your demo session");
+                clearStoredAuth();
+                set((s) => ({ ...s, user: "", role: "" }));
+                toast("You have been logged out.");
+                nav("/signin");
               }}
             >
-              <LogOut size={17} /> Sign out of demo
+              <LogOut size={17} /> Log out
             </button>
           )}
         </div>
@@ -1600,26 +1744,115 @@ function Auth({ signup = false }: { signup?: boolean }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [visible, setVisible] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const { set, toast } = useApp();
   const nav = useNavigate();
-  function submit(e: React.FormEvent) {
-    e.preventDefault();
-    const next: Record<string, string> = {};
-    if (signup && name.trim().length < 2)
-      next.name = "Please enter at least two characters.";
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
-      next.email = "Enter a valid email address.";
-    if (password.length < 8)
-      next.password = "Use at least 8 characters for this demo.";
-    setErrors(next);
-    if (!Object.keys(next).length) {
-      set((s) => ({ ...s, user: signup ? name.trim() : email.split("@")[0] }));
-      setPassword("");
-      toast("Demo session started. No real account was created.");
-      nav("/dashboard");
-    }
+  async function submit(e: React.FormEvent) {
+  e.preventDefault();
+
+  const next: Record<string, string> = {};
+
+  if (signup && name.trim().length < 2) {
+    next.name = "enter your name.";
   }
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    next.email = "enter your email.";
+  }
+
+  if (password.length < 8) {
+    next.password = "password should be at least 8 characters.";
+  }
+
+  setErrors(next);
+  if (Object.keys(next).length > 0) return;
+
+if (!signup) {
+  setSubmitting(true);
+  try {
+    const response = await fetch(
+      "http://localhost:8080/api/auth/login",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      }
+    );
+
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      body = undefined;
+    }
+
+    if (!response.ok) {
+      const detail = findLoginValue(body, ["error", "message"]);
+      setErrors({ submit: detail || "Login amalga oshmadi." });
+      return;
+    }
+
+    const token = findLoginValue(body, [
+      "token",
+      "accessToken",
+      "access_token",
+      "jwt",
+    ]);
+    if (!token) {
+      setErrors({
+        submit: "Backend login javobida token topilmadi.",
+      });
+      return;
+    }
+    const displayName =
+      findLoginValue(body, ["name", "username", "fullName"]) ||
+      email.split("@")[0];
+    const role = normalizeRole(
+      findLoginValue(body, ["role"]) || readJwtValue(token, ["role"]),
+    );
+    localStorage.setItem(AUTH_TOKEN_KEY, token);
+    localStorage.setItem(AUTH_USER_KEY, displayName);
+    localStorage.setItem(AUTH_ROLE_KEY, role || "user");
+    sessionStorage.removeItem(AUTH_TOKEN_KEY);
+    window.dispatchEvent(new Event("devpath-auth-changed"));
+    set((s) => ({ ...s, user: displayName, role: role || "user" }));
+    setPassword("");
+    nav(role === "admin" ? "/admin" : "/dashboard");
+  } catch {
+    setErrors({ submit: "Backendga ulanib bo‘lmadi." });
+  } finally {
+    setSubmitting(false);
+  }
+
+  return;
+}
+  try {
+    const response = await fetch(
+      "http://localhost:8080/api/auth/register",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name.trim(),
+          email,
+          password,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      setErrors({ submit: "an error occured while registering" });
+      return;
+    }
+
+    setPassword("");
+    toast("You have successfully registered. Please log in now.");
+    nav("/signin");
+  } catch {
+    setErrors({ submit: "could not connect to the backend" });
+  }
+}
   return (
     <section className="auth-page container" key={signup ? "signup" : "signin"}>
       <div className="auth-story">
@@ -1655,14 +1888,12 @@ function Auth({ signup = false }: { signup?: boolean }) {
             ? "Try your own learning space."
             : "Pick up where your curiosity left off."}
         </p>
-        <div className="demo-banner">
-          <ShieldCheck size={20} />
-          <span>
-            This is demo authentication. No real account is created. Your
-            password is never stored or sent.
-          </span>
-        </div>
         <form onSubmit={submit} noValidate>
+        {errors.submit && (
+          <p className="form-error" role="alert">
+            {errors.submit}
+          </p>
+)}
           {signup && (
             <label>
               Your name
@@ -1724,20 +1955,24 @@ function Auth({ signup = false }: { signup?: boolean }) {
               </small>
             )}
           </label>
-          <button className="button primary full" type="submit">
-            {signup ? "Start demo learning" : "Sign in to demo"}{" "}
+          <button
+            className="button primary full"
+            type="submit"
+            disabled={submitting}
+          >
+            {submitting
+              ? "Logging in…"
+              : signup
+                ? "Create account"
+                : "Log in"}{" "}
             <ArrowRight size={17} />
           </button>
         </form>
         <p className="auth-switch">
           {signup ? "Already exploring?" : "New around here?"}{" "}
           <Link to={signup ? "/signin" : "/signup"}>
-            {signup ? "Demo sign in" : "Get started"}
+            {signup ? "Log in" : "Create account"}
           </Link>
-        </p>
-        <p className="demo-note">
-          No payment, email verification, or real credentials needed. Use a
-          made-up password.
         </p>
       </div>
     </section>

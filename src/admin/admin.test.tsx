@@ -85,7 +85,9 @@ test("backend errors appear in the form and a retry creates only one cached cour
   ).toBe("Go API Essentials");
   await user.click(screen.getByRole("button", { name: "Create course" }));
   expect(
-    await screen.findByText("Your course was created on the backend."),
+    await screen.findByText(
+      "“Go API Essentials” was created successfully.",
+    ),
   ).toBeTruthy();
   expect(JSON.parse(localStorage.getItem(COURSE_STORAGE_KEY)!)).toHaveLength(
     13,
@@ -119,7 +121,9 @@ test("a pending submission disables the form and repeated submit events do not d
     new Response(JSON.stringify({ course: { id: 303 } }), { status: 201 }),
   );
   expect(
-    await screen.findByText("Your course was created on the backend."),
+    await screen.findByText(
+      "“Go API Essentials” was created successfully.",
+    ),
   ).toBeTruthy();
   expect(JSON.parse(localStorage.getItem(COURSE_STORAGE_KEY)!)[0].id).toBe(
     "303",
@@ -165,7 +169,7 @@ test("a browser cache failure after server creation does not offer to submit the
     "The course was created on the backend",
   );
   expect(
-    await screen.findByRole("heading", { name: "Refine your course." }),
+    await screen.findByRole("heading", { name: "Your course library." }),
   ).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Create course" })).toBeNull();
   expect(fetch).toHaveBeenCalledTimes(1);
@@ -190,7 +194,9 @@ test("create validates the form and publishes a persistent course to the student
   await user.selectOptions(screen.getByLabelText("Visibility"), "published");
   await user.click(screen.getByRole("button", { name: "Create course" }));
   expect(
-    await screen.findByText("Your course was created on the backend."),
+    await screen.findByText(
+      "“Build APIs with Go” was created successfully.",
+    ),
   ).toBeTruthy();
   const stored = JSON.parse(localStorage.getItem(COURSE_STORAGE_KEY)!);
   expect(stored).toHaveLength(13);
@@ -220,8 +226,11 @@ test("editing preserves course identity and updates its public detail page", asy
   await user.type(screen.getByLabelText("Price (USD)"), "64.50");
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   expect(
-    screen.getByText("Your course changes are saved in this browser only."),
+    await screen.findByText(
+      "“React in Practice” was updated in this browser demo.",
+    ),
   ).toBeTruthy();
+  expect(fetch).not.toHaveBeenCalled();
   const updated = JSON.parse(localStorage.getItem(COURSE_STORAGE_KEY)!).find(
     (c: { id: string }) => c.id === "react",
   );
@@ -236,6 +245,29 @@ test("editing preserves course identity and updates its public detail page", asy
   expect(
     screen.getByRole("heading", { name: "React in Practice", level: 1 }),
   ).toBeTruthy();
+});
+
+test("editing sends a numeric backend ID for a database course", async () => {
+  const user = userEvent.setup();
+  localStorage.setItem(
+    COURSE_STORAGE_KEY,
+    JSON.stringify([
+      { ...courses[0], id: "17", backendId: "17", status: "published" },
+    ]),
+  );
+  open("/admin/courses/17/edit");
+
+  await user.clear(screen.getByLabelText("Course title"));
+  await user.type(screen.getByLabelText("Course title"), "React from DB");
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+  expect(
+    await screen.findByText("“React from DB” was updated successfully."),
+  ).toBeTruthy();
+  expect(fetch).toHaveBeenCalledWith(
+    "http://localhost:8080/api/admin/courses/17",
+    expect.objectContaining({ method: "PUT" }),
+  );
 });
 
 test("draft courses stay out of the public catalog until published", async () => {
@@ -292,6 +324,7 @@ test("deletion requires confirmation and removes saved, enrolled and progress re
       name: "Delete course",
     }),
   );
+  expect(fetch).not.toHaveBeenCalled();
   expect(screen.queryByRole("link", { name: courses[0].title })).toBeNull();
   expect(JSON.parse(localStorage.getItem("devpath")!)).toMatchObject({
     saved: [],
@@ -303,6 +336,31 @@ test("deletion requires confirmation and removes saved, enrolled and progress re
   expect(
     screen.getByRole("heading", { name: "This path hasn’t been built yet." }),
   ).toBeTruthy();
+});
+
+test("deletion sends a numeric backend ID for a database course", async () => {
+  const user = userEvent.setup();
+  localStorage.setItem(
+    COURSE_STORAGE_KEY,
+    JSON.stringify([
+      { ...courses[0], id: "17", backendId: "17", status: "published" },
+    ]),
+  );
+  open();
+
+  await user.click(
+    screen.getByRole("button", { name: `Delete ${courses[0].title}` }),
+  );
+  await user.click(
+    within(screen.getByRole("dialog")).getByRole("button", {
+      name: "Delete course",
+    }),
+  );
+
+  expect(fetch).toHaveBeenCalledWith(
+    "http://localhost:8080/api/admin/courses/17",
+    expect.objectContaining({ method: "DELETE" }),
+  );
 });
 
 test("admin search, status filters, reset and pagination are functional", async () => {
@@ -366,7 +424,5 @@ test("storage failures are reported without pretending changes were saved", asyn
   expect(screen.getByRole("alert").textContent).toContain(
     "Changes could not be saved",
   );
-  expect(
-    screen.queryByText("Your course changes are saved in this browser only."),
-  ).toBeNull();
+  expect(screen.queryByText("was updated successfully.")).toBeNull();
 });

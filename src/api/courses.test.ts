@@ -1,6 +1,14 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { createCourse, courseCreationUrl } from "./courses";
+import {
+  createCourse,
+  courseCreationUrl,
+  courseDeletionUrl,
+  courseUpdateUrl,
+  deleteCourseFromApi,
+  getCoursesFromApi,
+  updateCourseInApi,
+} from "./courses";
 import { courses } from "../data";
 import type { ManagedCourse } from "../courses/CourseStore";
 
@@ -23,6 +31,102 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
+});
+
+test("loads and maps database courses from the GET endpoint", async () => {
+  sessionStorage.setItem("token", "get-token");
+  const fetchMock = vi.fn().mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        courses: [
+          {
+            id: 17,
+            title: "Go Backend",
+            description: "Build APIs with Go and PostgreSQL.",
+            category: "Programming",
+            level: "Beginner",
+            price: 49.5,
+            rating: 4.8,
+            duration: 20,
+            instructor: "Ozod Hamzayev",
+          },
+        ],
+      }),
+      { status: 200 },
+    ),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+
+  const result = await getCoursesFromApi();
+
+  expect(result).toHaveLength(1);
+  expect(result[0]).toMatchObject({
+    id: "17",
+    backendId: "17",
+    title: "Go Backend",
+    price: 49.5,
+    rating: 4.8,
+    hours: 20,
+    initials: "OH",
+  });
+  expect(fetchMock).toHaveBeenCalledWith(
+    "http://localhost:8080/api/admin/courses",
+    expect.objectContaining({ method: "GET" }),
+  );
+  expect(fetchMock.mock.calls[0][1].headers.get("Authorization")).toBe(
+    "Bearer get-token",
+  );
+});
+
+test("rejects GET courses without numeric database IDs", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ courses: [{ id: "react", title: "Demo" }] }),
+        { status: 200 },
+      ),
+    ),
+  );
+
+  await expect(getCoursesFromApi()).rejects.toThrow(
+    "missing a numeric database ID",
+  );
+});
+
+test("loads courses from a custom nested backend response wrapper", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          "successfully loaded": [
+            {
+              ID: 21,
+              Title: "PostgreSQL",
+              Description: "Learn SQL",
+              Category: "Programming",
+              Level: "Beginner",
+              Price: "29.00",
+              Rating: "4.5",
+              Duration: 8,
+              Instructor: "Alex Morgan",
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    ),
+  );
+
+  const result = await getCoursesFromApi();
+
+  expect(result[0]).toMatchObject({
+    id: "21",
+    title: "PostgreSQL",
+    price: 29,
+    rating: 4.5,
+  });
 });
 
 test("posts the Go DTO, sends an existing Bearer token and retains the server-assigned ID", async () => {
@@ -63,12 +167,12 @@ test("supports configurable URLs and HttpOnly-cookie authentication without a Be
   const fetchMock = vi
     .fn()
     .mockResolvedValue(
-      new Response(JSON.stringify({ id: "server-course" }), { status: 200 }),
+      new Response(JSON.stringify({ id: "42" }), { status: 200 }),
     );
   vi.stubGlobal("fetch", fetchMock);
   const result = await createCourse(candidate);
   expect(courseCreationUrl()).toBe("http://localhost:9090/courses/create");
-  expect(result.id).toBe("server-course");
+  expect(result.id).toBe("42");
   expect(fetchMock.mock.calls[0][1].credentials).toBe("include");
   expect(fetchMock.mock.calls[0][1].headers.has("Authorization")).toBe(false);
 });
@@ -102,12 +206,119 @@ test("explains network failures and does not convert them into local-only creati
   );
 });
 
-test("accepts an empty successful response without inventing a backend ID", async () => {
+test("rejects a successful response without a database ID", async () => {
   vi.stubGlobal(
     "fetch",
     vi.fn().mockResolvedValue(new Response(null, { status: 201 })),
   );
+  await expect(createCourse(candidate)).rejects.toThrow(
+    "did not return its numeric database ID",
+  );
+});
+
+test("reads the ID from the backend's successfully-created response wrapper", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ "successfully created": { id: 14 } }),
+        { status: 201 },
+      ),
+    ),
+  );
+
   const result = await createCourse(candidate);
-  expect(result.id).toBe(candidate.id);
-  expect(result.backendId).toBeUndefined();
+
+  expect(result.id).toBe("14");
+  expect(result.backendId).toBe("14");
+});
+
+test("reads the ID when the backend wraps its message and object in an array", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(["successfully created", { id: 14 }]), {
+        status: 201,
+      }),
+    ),
+  );
+
+  const result = await createCourse(candidate);
+
+  expect(result.id).toBe("14");
+  expect(result.backendId).toBe("14");
+});
+
+test("updates a course through PUT with the Go DTO and Bearer token", async () => {
+  localStorage.setItem("token", "update-token");
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValue(new Response(JSON.stringify({ id: 42 }), { status: 200 }));
+  vi.stubGlobal("fetch", fetchMock);
+
+  await updateCourseInApi("42", {
+    ...candidate,
+    title: "Updated React",
+    price: 79,
+  });
+
+  expect(courseUpdateUrl("42")).toBe(
+    "http://localhost:8080/api/admin/courses/42",
+  );
+  const [url, options] = fetchMock.mock.calls[0];
+  expect(url).toBe("http://localhost:8080/api/admin/courses/42");
+  expect(options.method).toBe("PUT");
+  expect(options.headers.get("Authorization")).toBe("Bearer update-token");
+  expect(options.headers.get("Content-Type")).toBe("application/json");
+  expect(JSON.parse(options.body)).toMatchObject({
+    title: "Updated React",
+    price: 79,
+    duration: candidate.hours,
+  });
+});
+
+test("identifies a missing update route instead of calling it a create error", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(new Response(null, { status: 404 })),
+  );
+
+  await expect(updateCourseInApi("42", candidate)).rejects.toThrow(
+    "The course update route or course ID was not found",
+  );
+});
+
+test("deletes a course by backend ID with the existing Bearer token", async () => {
+  sessionStorage.setItem("token", "test-access-token");
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValue(new Response(null, { status: 204 }));
+  vi.stubGlobal("fetch", fetchMock);
+
+  await deleteCourseFromApi("42");
+
+  expect(courseDeletionUrl("42")).toBe(
+    "http://localhost:8080/api/admin/courses/42",
+  );
+  const [url, options] = fetchMock.mock.calls[0];
+  expect(url).toBe("http://localhost:8080/api/admin/courses/42");
+  expect(options.method).toBe("DELETE");
+  expect(options.headers.get("Authorization")).toBe(
+    "Bearer test-access-token",
+  );
+});
+
+test("reports a backend delete error", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: "Course not found" }), {
+        status: 404,
+      }),
+    ),
+  );
+
+  await expect(deleteCourseFromApi("999")).rejects.toThrow(
+    "Course not found (HTTP 404)",
+  );
 });

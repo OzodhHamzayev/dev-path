@@ -24,7 +24,7 @@ import {
   type ManagedCourse,
 } from "../courses/CourseStore";
 import { CourseVisual } from "../components/CourseVisual";
-import { createCourse } from "../api/courses";
+import { createCourse, updateCourseInApi } from "../api/courses";
 import { AdminLayout } from "./AdminLayout";
 
 type Values = {
@@ -173,14 +173,8 @@ function EditorForm({ course }: { course?: ManagedCourse }) {
       .slice(0, 2)
       .join("")
       .toUpperCase();
-    const slug =
-      values.title
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-|-$/g, "")
-        .slice(0, 50) || "course";
     const updated: ManagedCourse = {
-      id: course?.id ?? `${slug}-${crypto.randomUUID().slice(0, 8)}`,
+      id: course?.id ?? crypto.randomUUID(),
       title: values.title.trim(),
       description: values.description.trim(),
       instructor: values.instructor.trim(),
@@ -203,9 +197,9 @@ function EditorForm({ course }: { course?: ManagedCourse }) {
       try {
         const created = await createCourse(updated);
         cacheCreatedCourse(created);
-        nav(`/admin/courses/${created.id}/edit`, {
+        nav("/admin", {
           replace: true,
-          state: { created: true },
+          state: { createdTitle: created.title },
         });
       } catch (error) {
         setErrors({
@@ -221,8 +215,30 @@ function EditorForm({ course }: { course?: ManagedCourse }) {
       return;
     }
 
-    if (saveCourse(updated)) {
-      setNotice("Your course changes are saved in this browser only.");
+    submitting.current = true;
+    setIsSaving(true);
+    try {
+      const databaseId =
+        course.backendId ?? (/^\d+$/.test(course.id) ? course.id : null);
+      if (databaseId) await updateCourseInApi(databaseId, updated);
+      if (saveCourse(updated)) {
+        nav("/admin", {
+          replace: true,
+          state: databaseId
+            ? { updatedTitle: updated.title }
+            : { localUpdatedTitle: updated.title },
+        });
+      }
+    } catch (error) {
+      setErrors({
+        submit:
+          error instanceof Error
+            ? error.message
+            : "The course could not be updated.",
+      });
+    } finally {
+      submitting.current = false;
+      setIsSaving(false);
     }
   }
   function inputProps(key: keyof Values) {
@@ -263,7 +279,9 @@ function EditorForm({ course }: { course?: ManagedCourse }) {
         <span className="admin-preview-dot" />
         <p>
           {course
-            ? "Editing, publishing, and deleting currently change the browser copy only. Their backend routes are not connected yet."
+            ? course.backendId || /^\d+$/.test(course.id)
+              ? "Saving changes updates this course through the backend. Cover, subject, and visibility remain in the browser copy until the backend supports them."
+              : "This starter course exists only in the browser, so changes stay in this demo workspace. Database courses are updated through the backend."
             : "Create course sends your details to the backend. Cover, subject, and draft/published visibility are kept in this browser until the backend supports them."}
         </p>
       </div>
@@ -499,7 +517,9 @@ function EditorForm({ course }: { course?: ManagedCourse }) {
             >
               <Save size={16} />
               {isSaving
-                ? "Creating course…"
+                ? course
+                  ? "Saving changes…"
+                  : "Creating course…"
                 : course
                   ? "Save changes"
                   : "Create course"}

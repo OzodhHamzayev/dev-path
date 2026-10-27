@@ -15,7 +15,8 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
+import { deleteCourseFromApi } from "../api/courses";
 import { useCourseStore, type ManagedCourse } from "../courses/CourseStore";
 import { CourseVisual } from "../components/CourseVisual";
 import { AdminLayout } from "./AdminLayout";
@@ -27,15 +28,36 @@ export function AdminCourses({
 }: {
   onDeleteCourse: (id: string) => void;
 }) {
-  const { courses, saveCourse, deleteCourse, storageError } = useCourseStore();
+  const {
+    courses,
+    saveCourse,
+    deleteCourse,
+    storageError,
+    loadError,
+    isLoading,
+    refreshCourses,
+  } = useCourseStore();
+  const location = useLocation();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const [category, setCategory] = useState("all");
   const [sort, setSort] = useState("default");
   const [page, setPage] = useState(1);
   const [deleting, setDeleting] = useState<ManagedCourse | null>(null);
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState(() => {
+    const createdTitle = location.state?.createdTitle;
+    if (typeof createdTitle === "string")
+      return `“${createdTitle}” was created successfully.`;
+    const updatedTitle = location.state?.updatedTitle;
+    if (typeof updatedTitle === "string")
+      return `“${updatedTitle}” was updated successfully.`;
+    const localUpdatedTitle = location.state?.localUpdatedTitle;
+    return typeof localUpdatedTitle === "string"
+      ? `“${localUpdatedTitle}” was updated in this browser demo.`
+      : "";
+  });
   const [deleteError, setDeleteError] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
   const filtered = useMemo(() => {
     const result = courses.filter(
       (c) =>
@@ -64,17 +86,37 @@ export function AdminCourses({
     setSort("default");
     setPage(1);
   }
-  function confirmDelete() {
+  async function confirmDelete() {
     if (!deleting) return;
-    if (deleteCourse(deleting.id)) {
+    setIsDeleting(true);
+    setDeleteError("");
+    try {
+      const databaseId =
+        deleting.backendId ?? (/^\d+$/.test(deleting.id) ? deleting.id : null);
+      // The starter courses from data.ts use IDs such as "react" and do not
+      // exist in PostgreSQL. Only courses with a numeric database ID should
+      // call the backend delete route.
+      if (databaseId) await deleteCourseFromApi(databaseId);
+      if (!deleteCourse(deleting.id)) {
+        setDeleteError(
+          databaseId
+            ? "The backend deleted the course, but the browser copy could not be updated. Reload the page to refresh it."
+            : "The demo course could not be removed from browser storage. Check browser storage and try again.",
+        );
+        return;
+      }
       onDeleteCourse(deleting.id);
       setNotice(`“${deleting.title}” was deleted.`);
       setDeleting(null);
-      setDeleteError("");
-    } else
+    } catch (error) {
       setDeleteError(
-        "The course could not be deleted. Check browser storage and try again.",
+        error instanceof Error
+          ? error.message
+          : "The course could not be deleted.",
       );
+    } finally {
+      setIsDeleting(false);
+    }
   }
   return (
     <AdminLayout>
@@ -88,14 +130,6 @@ export function AdminCourses({
           <Plus size={17} />
           Create course
         </Link>
-      </div>
-      <div className="admin-preview-notice">
-        <ShieldNote />
-        <p>
-          <strong>Course creation is connected to the backend.</strong> This
-          list is a browser copy. Editing, publishing, and deleting are still
-          browser-only.
-        </p>
       </div>
       <div className="admin-stats">
         {[
@@ -157,6 +191,14 @@ export function AdminCourses({
         <p role="alert" className="admin-error">
           {storageError}
         </p>
+      )}
+      {loadError && !deleting && (
+        <div role="alert" className="admin-error">
+          {loadError}{" "}
+          <button type="button" onClick={() => void refreshCourses()}>
+            Try again
+          </button>
+        </div>
       )}
       <section className="admin-library" aria-labelledby="library-title">
         <div className="admin-library-heading">
@@ -248,7 +290,15 @@ export function AdminCourses({
             </button>
           </div>
         )}
-        {rows.length ? (
+        {isLoading ? (
+          <div className="admin-empty" aria-live="polite">
+            <span>
+              <BookOpen size={28} />
+            </span>
+            <h3>Loading courses…</h3>
+            <p>Getting the latest course list from the backend.</p>
+          </div>
+        ) : rows.length ? (
           <>
             <div className="admin-table-scroll">
               <table className="admin-table">
@@ -450,14 +500,13 @@ export function AdminCourses({
         <DeleteCourseDialog
           title={deleting.title}
           error={deleteError}
-          onCancel={() => setDeleting(null)}
+          deleting={isDeleting}
+          onCancel={() => {
+            if (!isDeleting) setDeleting(null);
+          }}
           onDelete={confirmDelete}
         />
       )}
     </AdminLayout>
   );
-}
-
-function ShieldNote() {
-  return <span className="admin-preview-dot" aria-hidden="true" />;
 }
